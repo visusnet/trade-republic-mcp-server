@@ -8,6 +8,7 @@ import { FundamentalsService } from './services/FundamentalsService';
 import { MarketDataService } from './services/MarketDataService';
 import { NewsService } from './services/NewsService';
 import { PortfolioService } from './services/PortfolioService';
+import { RiskService } from './services/RiskService';
 import { SentimentService } from './services/SentimentService';
 import { SymbolMapper } from './services/SymbolMapper';
 import { TechnicalAnalysisService } from './services/TechnicalAnalysisService';
@@ -16,6 +17,7 @@ import {
   ExternalDataToolRegistry,
   MarketDataToolRegistry,
   PortfolioToolRegistry,
+  RiskManagementToolRegistry,
   TechnicalAnalysisToolRegistry,
 } from './tools';
 
@@ -150,6 +152,14 @@ BEST PRACTICES:
       fundamentalsService,
     );
     externalDataToolRegistry.register();
+
+    // Risk management tools don't require authentication
+    const riskService = new RiskService();
+    const riskManagementToolRegistry = new RiskManagementToolRegistry(
+      server,
+      riskService,
+    );
+    riskManagementToolRegistry.register();
   }
 
   private createMcpServerInstance(): McpServer {

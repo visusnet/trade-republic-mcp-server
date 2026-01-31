@@ -73,6 +73,8 @@ import {
   FundamentalsServiceError,
   GetFundamentalsRequestSchema,
   GetFundamentalsResponseSchema,
+  RiskService,
+  RiskServiceError,
   type FileSystem,
 } from './index';
 
@@ -170,6 +172,11 @@ describe('Services Index', () => {
       expect(FundamentalsServiceError).toBeDefined();
       expect(GetFundamentalsRequestSchema).toBeDefined();
       expect(GetFundamentalsResponseSchema).toBeDefined();
+    });
+
+    it('should export RiskService and related', () => {
+      expect(RiskService).toBeDefined();
+      expect(RiskServiceError).toBeDefined();
     });
   });
 

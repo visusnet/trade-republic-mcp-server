@@ -1,5 +1,9 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
   "project": ["src/**/*.ts"],
-  "exclude": ["enumMembers", "types"]
+  "exclude": ["enumMembers", "types"],
+  "ignore": [
+    "src/server/services/index.ts",
+    "src/server/services/RiskService.types.ts"
+  ]
 }

@@ -145,3 +145,33 @@ npm run test:types && npm run lint:fix && npm run format && npm run test:coverag
 3. Removed unused `ToolRegistry` export from tools/index.ts (base class, internal only)
 
 ---
+
+## Issue 011: Task 09 Combined Plan - Mathematical Formula Errors
+**Date:** 2026-01-31
+**Status:** ADDRESSED
+
+**Issue:** The combined plan for Task 09 (Risk Management Tools) contained several mathematical errors and ambiguities:
+
+1. **VaR Z-Scores Incorrect**: Plan showed conflicting z-scores. Section 3.2 listed 95%=1.645, 99%=2.33, but constants section showed 0.90=1.645, 0.95=1.96, 0.99=2.576. These are TWO-TAILED values. VaR requires ONE-TAILED z-scores: 95%=-1.645, 99%=-2.326.
+
+2. **Max Drawdown Formula Backwards**: Formula showed `MDD = (Trough - Peak) / Peak` which produces negative values. Correct formula is `MDD = (Peak - Trough) / Peak` for positive percentage representing loss.
+
+3. **Returns Calculation Not Specified**: Plan didn't specify whether to use simple returns or log returns. Log returns are standard for volatility/risk metrics because they're time-additive and normally distributed.
+
+4. **Sharpe Ratio Annualization Unclear**: Formula shown but annualization methodology not detailed. Required clarification on how to annualize returns properly.
+
+5. **File Structure Inconsistency**: Plan showed separate request/response files, but RiskService is a pure calculation service like TechnicalIndicatorsService, which consolidates schemas into the types file.
+
+**Context:** These errors would have led to incorrect risk calculations and wrong trading decisions. Mathematical accuracy is critical for risk management.
+
+**Decision:** Created corrected final plan (`09-risk-management-tools-plan-final.md`) with:
+- Correct one-tailed VaR z-scores (-1.645, -2.326)
+- Corrected max drawdown formula with example
+- Explicit log returns specification
+- Detailed Sharpe ratio annualization steps
+- Simplified file structure matching TechnicalIndicatorsService
+- Mathematical verification summary section
+
+**Action Taken:** Verified all formulas against financial mathematics standards and documented corrections in the final plan.
+
+---

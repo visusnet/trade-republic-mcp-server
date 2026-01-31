@@ -156,8 +156,8 @@ describe('TradeRepublicMcpServer', () => {
       ]);
 
       const tools = await clientWithApi.listTools({});
-      // 2 portfolio + 7 market data + 2 technical analysis + 3 external data = 14 total
-      expect(tools.tools).toHaveLength(14);
+      // 2 portfolio + 7 market data + 2 technical analysis + 3 external data + 2 risk management = 16 total
+      expect(tools.tools).toHaveLength(16);
     });
   });
 
@@ -224,8 +224,8 @@ describe('TradeRepublicMcpServer', () => {
       ]);
 
       const tools = await testClient.listTools({});
-      // Only 3 external data tools are available without apiService
-      expect(tools.tools).toHaveLength(3);
+      // 3 external data tools + 2 risk management tools are available without apiService
+      expect(tools.tools).toHaveLength(5);
     });
   });
 

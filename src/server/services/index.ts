@@ -65,6 +65,19 @@ export * from './FundamentalsService.response';
 export { FundamentalsServiceError } from './FundamentalsService.types';
 export { FundamentalsService } from './FundamentalsService';
 
+// Risk Service exports
+export {
+  RiskServiceError,
+  type CalculatePositionSizeRequest,
+  type CalculatePositionSizeResponse,
+  type GetRiskMetricsRequest,
+  type GetRiskMetricsResponse,
+  type VolatilityResult,
+  type VaRResult,
+  type MaxDrawdownResult,
+} from './RiskService.types';
+export { RiskService } from './RiskService';
+
 /**
  * Default file system implementation using Node.js fs module.
  */
