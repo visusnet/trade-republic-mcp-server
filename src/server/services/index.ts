@@ -33,6 +33,11 @@ export * from './PortfolioService.request';
 export * from './PortfolioService.response';
 export { PortfolioService } from './PortfolioService';
 
+// Market Data Service exports
+export * from './MarketDataService.request';
+export * from './MarketDataService.response';
+export { MarketDataService } from './MarketDataService';
+
 /**
  * Default file system implementation using Node.js fs module.
  */

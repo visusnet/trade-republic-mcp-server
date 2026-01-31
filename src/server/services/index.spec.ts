@@ -37,6 +37,21 @@ import {
   PortfolioService,
   GetPortfolioRequestSchema,
   GetCashBalanceRequestSchema,
+  MarketDataService,
+  GetPriceRequestSchema,
+  GetPriceHistoryRequestSchema,
+  GetOrderBookRequestSchema,
+  SearchAssetsRequestSchema,
+  GetAssetInfoRequestSchema,
+  GetMarketStatusRequestSchema,
+  WaitForMarketRequestSchema,
+  GetPriceResponseSchema,
+  GetPriceHistoryResponseSchema,
+  GetOrderBookResponseSchema,
+  SearchAssetsResponseSchema,
+  GetAssetInfoResponseSchema,
+  GetMarketStatusResponseSchema,
+  WaitForMarketResponseSchema,
   type FileSystem,
 } from './index';
 
@@ -65,6 +80,30 @@ describe('Services Index', () => {
     it('should export Portfolio request schemas', () => {
       expect(GetPortfolioRequestSchema).toBeDefined();
       expect(GetCashBalanceRequestSchema).toBeDefined();
+    });
+
+    it('should export MarketDataService', () => {
+      expect(MarketDataService).toBeDefined();
+    });
+
+    it('should export MarketData request schemas', () => {
+      expect(GetPriceRequestSchema).toBeDefined();
+      expect(GetPriceHistoryRequestSchema).toBeDefined();
+      expect(GetOrderBookRequestSchema).toBeDefined();
+      expect(SearchAssetsRequestSchema).toBeDefined();
+      expect(GetAssetInfoRequestSchema).toBeDefined();
+      expect(GetMarketStatusRequestSchema).toBeDefined();
+      expect(WaitForMarketRequestSchema).toBeDefined();
+    });
+
+    it('should export MarketData response schemas', () => {
+      expect(GetPriceResponseSchema).toBeDefined();
+      expect(GetPriceHistoryResponseSchema).toBeDefined();
+      expect(GetOrderBookResponseSchema).toBeDefined();
+      expect(SearchAssetsResponseSchema).toBeDefined();
+      expect(GetAssetInfoResponseSchema).toBeDefined();
+      expect(GetMarketStatusResponseSchema).toBeDefined();
+      expect(WaitForMarketResponseSchema).toBeDefined();
     });
   });
 

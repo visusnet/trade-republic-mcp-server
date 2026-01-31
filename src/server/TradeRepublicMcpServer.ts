@@ -4,9 +4,10 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import type { Express, Request, Response } from 'express';
 
 import { logger } from '../logger';
+import { MarketDataService } from './services/MarketDataService';
 import { PortfolioService } from './services/PortfolioService';
 import type { TradeRepublicApiService } from './services/TradeRepublicApiService';
-import { PortfolioToolRegistry } from './tools';
+import { MarketDataToolRegistry, PortfolioToolRegistry } from './tools';
 
 export class TradeRepublicMcpServer {
   private readonly app: Express;
@@ -108,6 +109,13 @@ BEST PRACTICES:
         portfolioService,
       );
       portfolioToolRegistry.register();
+
+      const marketDataService = new MarketDataService(this.apiService);
+      const marketDataToolRegistry = new MarketDataToolRegistry(
+        server,
+        marketDataService,
+      );
+      marketDataToolRegistry.register();
     }
   }
 

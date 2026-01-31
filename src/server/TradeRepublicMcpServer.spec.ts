@@ -111,6 +111,56 @@ describe('TradeRepublicMcpServer', () => {
     });
   });
 
+  describe('Market Data Tools', () => {
+    it('should register market data tools when apiService is provided', async () => {
+      const mockApiService = createMockApiService();
+      const serverWithApi = new TradeRepublicMcpServer(mockApiService);
+      const mcpServerWithApi = serverWithApi.getMcpServer();
+
+      const clientWithApi = new Client(
+        { name: 'test-client', version: '1.0.0' },
+        { capabilities: {} },
+      );
+      const [clientTransport, serverTransport] =
+        InMemoryTransport.createLinkedPair();
+      await Promise.all([
+        clientWithApi.connect(clientTransport),
+        mcpServerWithApi.connect(serverTransport),
+      ]);
+
+      const tools = await clientWithApi.listTools({});
+      const toolNames = tools.tools.map((t) => t.name);
+      expect(toolNames).toContain('get_price');
+      expect(toolNames).toContain('get_price_history');
+      expect(toolNames).toContain('get_order_book');
+      expect(toolNames).toContain('search_assets');
+      expect(toolNames).toContain('get_asset_info');
+      expect(toolNames).toContain('get_market_status');
+      expect(toolNames).toContain('wait_for_market');
+    });
+
+    it('should register all 9 tools when apiService is provided', async () => {
+      const mockApiService = createMockApiService();
+      const serverWithApi = new TradeRepublicMcpServer(mockApiService);
+      const mcpServerWithApi = serverWithApi.getMcpServer();
+
+      const clientWithApi = new Client(
+        { name: 'test-client', version: '1.0.0' },
+        { capabilities: {} },
+      );
+      const [clientTransport, serverTransport] =
+        InMemoryTransport.createLinkedPair();
+      await Promise.all([
+        clientWithApi.connect(clientTransport),
+        mcpServerWithApi.connect(serverTransport),
+      ]);
+
+      const tools = await clientWithApi.listTools({});
+      // 2 portfolio tools + 7 market data tools = 9 total
+      expect(tools.tools).toHaveLength(9);
+    });
+  });
+
   describe('HTTP Routes', () => {
     it('should respond with 405 for GET /mcp', async () => {
       const response = await request(server.getExpressApp()).get('/mcp');
