@@ -25,3 +25,28 @@
 **Decision:** Keep `logger.api` for now. Add additional scopes as needed during implementation of the API service.
 
 ---
+
+## Issue 003: Implementation done in main context instead of sub-agent
+**Date:** 2026-01-31
+**Status:** ADDRESSED
+
+**Issue:** Task 03 implementation was done directly in the main conversation context instead of delegating to a sub-agent, polluting the context.
+
+**Context:** The CLAUDE.md workflow specifies "Start a sub agent to implement the final task plan by following the TDD red-green-refactor cycle."
+
+**Decision:** For Task 04 onwards, delegate all implementation work to sub-agents. Main context should only:
+1. Create and merge plans
+2. Verify sub-agent work
+3. Review and commit
+
+---
+
+## Issue 004: index.ts exclusion now removable
+**Date:** 2026-01-31
+**Status:** ADDRESSED
+
+**Issue:** Issue 001 noted index.ts coverage exclusion. Task 03 implemented the real server code.
+
+**Action Taken:** The index.ts exclusion in jest.config.js is still present but the file now has real code. However, index.ts is the entry point that just starts the server - testing it would require integration tests. The exclusion remains appropriate for now.
+
+---
