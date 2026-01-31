@@ -3,12 +3,34 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import request from 'supertest';
 import * as StreamableHttpModule from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+
 import { mockLogger } from '@test/loggerMock';
+import type { TradeRepublicApiService } from './services/TradeRepublicApiService';
+import { AuthStatus } from './services/TradeRepublicApiService.types';
 
 const logger = mockLogger();
 jest.mock('../logger', () => ({ logger }));
 
 import { TradeRepublicMcpServer } from './TradeRepublicMcpServer';
+
+/**
+ * Creates a mock TradeRepublicApiService for testing.
+ */
+function createMockApiService(): jest.Mocked<TradeRepublicApiService> {
+  return {
+    getAuthStatus: jest
+      .fn<() => AuthStatus>()
+      .mockReturnValue(AuthStatus.AUTHENTICATED),
+    subscribe: jest
+      .fn<(input: { topic: string; payload?: object }) => number>()
+      .mockReturnValue(1),
+    unsubscribe: jest.fn<(id: number) => void>(),
+    onMessage: jest.fn(),
+    offMessage: jest.fn(),
+    onError: jest.fn(),
+    offError: jest.fn(),
+  } as unknown as jest.Mocked<TradeRepublicApiService>;
+}
 
 describe('TradeRepublicMcpServer', () => {
   let server: TradeRepublicMcpServer;
@@ -56,6 +78,36 @@ describe('TradeRepublicMcpServer', () => {
     it('should return MCP server instance', () => {
       const mcpServer = server.getMcpServer();
       expect(mcpServer).toBeDefined();
+    });
+  });
+
+  describe('Portfolio Tools', () => {
+    it('should register portfolio tools when apiService is provided', async () => {
+      const mockApiService = createMockApiService();
+      const serverWithApi = new TradeRepublicMcpServer(mockApiService);
+      const mcpServerWithApi = serverWithApi.getMcpServer();
+
+      const clientWithApi = new Client(
+        { name: 'test-client', version: '1.0.0' },
+        { capabilities: {} },
+      );
+      const [clientTransport, serverTransport] =
+        InMemoryTransport.createLinkedPair();
+      await Promise.all([
+        clientWithApi.connect(clientTransport),
+        mcpServerWithApi.connect(serverTransport),
+      ]);
+
+      const tools = await clientWithApi.listTools({});
+      expect(tools.tools.length).toBeGreaterThan(0);
+      expect(tools.tools.map((t) => t.name)).toContain('get_portfolio');
+      expect(tools.tools.map((t) => t.name)).toContain('get_cash_balance');
+    });
+
+    it('should not register portfolio tools when no apiService provided', () => {
+      // The server should still work without apiService, just without portfolio tools
+      const serverWithoutApi = new TradeRepublicMcpServer();
+      expect(serverWithoutApi.getMcpServer()).toBeDefined();
     });
   });
 

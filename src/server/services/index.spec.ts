@@ -34,6 +34,9 @@ import {
   DEFAULT_CONFIG_DIR,
   defaultFileSystem,
   defaultWebSocketFactory,
+  PortfolioService,
+  GetPortfolioRequestSchema,
+  GetCashBalanceRequestSchema,
   type FileSystem,
 } from './index';
 
@@ -53,6 +56,15 @@ describe('Services Index', () => {
 
     it('should export DEFAULT_CONFIG_DIR', () => {
       expect(DEFAULT_CONFIG_DIR).toBe('.trade-republic-mcp');
+    });
+
+    it('should export PortfolioService', () => {
+      expect(PortfolioService).toBeDefined();
+    });
+
+    it('should export Portfolio request schemas', () => {
+      expect(GetPortfolioRequestSchema).toBeDefined();
+      expect(GetCashBalanceRequestSchema).toBeDefined();
     });
   });
 

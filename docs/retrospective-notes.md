@@ -64,3 +64,17 @@
 **Decision:** Document for future consideration. These can be addressed in Task 12 (Integration Testing) or as part of production hardening.
 
 ---
+
+## Issue 006: Zod schemas using .passthrough()
+**Date:** 2026-01-31
+**Status:** NOTED
+
+**Issue:** The PortfolioService response schemas use `.passthrough()` to handle unknown API fields. The coinbase-mcp-server prohibits this pattern because it masks API changes and reduces type safety.
+
+**Context:** We used `.passthrough()` because the exact Trade Republic API response format is not 100% confirmed (based on pytr research). This allows the code to work even if the API returns extra fields.
+
+**Decision:** Remove `.passthrough()` from all response schemas once we have verified the actual API response format during integration testing (Task 12). Strict schemas are preferable for catching API changes early.
+
+**Action Required:** In Task 12, capture real API responses and update the schemas to be strict (remove `.passthrough()`).
+
+---

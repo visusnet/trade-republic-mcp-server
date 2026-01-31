@@ -28,6 +28,11 @@ export { CryptoManager } from './TradeRepublicApiService.crypto';
 export { WebSocketManager } from './TradeRepublicApiService.websocket';
 export { TradeRepublicApiService } from './TradeRepublicApiService';
 
+// Portfolio Service exports
+export * from './PortfolioService.request';
+export * from './PortfolioService.response';
+export { PortfolioService } from './PortfolioService';
+
 /**
  * Default file system implementation using Node.js fs module.
  */

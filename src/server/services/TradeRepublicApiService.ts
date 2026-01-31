@@ -340,6 +340,26 @@ export class TradeRepublicApiService {
   }
 
   /**
+   * Removes a message handler.
+   */
+  offMessage(handler: (message: WebSocketMessage) => void): void {
+    const index = this.messageHandlers.indexOf(handler);
+    if (index !== -1) {
+      this.messageHandlers.splice(index, 1);
+    }
+  }
+
+  /**
+   * Removes an error handler.
+   */
+  offError(handler: (error: Error | WebSocketMessage) => void): void {
+    const index = this.errorHandlers.indexOf(handler);
+    if (index !== -1) {
+      this.errorHandlers.splice(index, 1);
+    }
+  }
+
+  /**
    * Ensures the service has been initialized.
    */
   private ensureInitialized(): void {

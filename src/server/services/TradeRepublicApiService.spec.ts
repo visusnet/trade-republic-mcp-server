@@ -693,4 +693,48 @@ describe('TradeRepublicApiService', () => {
       expect(service.getAuthStatus()).toBe(AuthStatus.UNAUTHENTICATED);
     });
   });
+
+  describe('offMessage', () => {
+    it('should remove a registered message handler', async () => {
+      await service.initialize();
+      const handler = jest.fn();
+      service.onMessage(handler);
+      service.offMessage(handler);
+
+      const message = { id: 1, code: 'A', payload: { test: true } };
+      mockWs.emit('message', message);
+
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it('should do nothing if handler not found', async () => {
+      await service.initialize();
+      const handler = jest.fn();
+      expect(() => {
+        service.offMessage(handler);
+      }).not.toThrow();
+    });
+  });
+
+  describe('offError', () => {
+    it('should remove a registered error handler', async () => {
+      await service.initialize();
+      const handler = jest.fn();
+      service.onError(handler);
+      service.offError(handler);
+
+      const error = new Error('Test error');
+      mockWs.emit('error', error);
+
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it('should do nothing if handler not found', async () => {
+      await service.initialize();
+      const handler = jest.fn();
+      expect(() => {
+        service.offError(handler);
+      }).not.toThrow();
+    });
+  });
 });

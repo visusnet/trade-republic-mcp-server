@@ -2,12 +2,18 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { createMcpExpressApp } from '@modelcontextprotocol/sdk/server/express.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { Express, Request, Response } from 'express';
+
 import { logger } from '../logger';
+import { PortfolioService } from './services/PortfolioService';
+import type { TradeRepublicApiService } from './services/TradeRepublicApiService';
+import { PortfolioToolRegistry } from './tools/PortfolioToolRegistry';
 
 export class TradeRepublicMcpServer {
   private readonly app: Express;
+  private readonly apiService: TradeRepublicApiService | undefined;
 
-  constructor() {
+  constructor(apiService?: TradeRepublicApiService) {
+    this.apiService = apiService;
     this.app = createMcpExpressApp();
     this.setupRoutes();
   }
@@ -94,12 +100,24 @@ BEST PRACTICES:
     return this.createMcpServerInstance();
   }
 
+  private registerToolsForServer(server: McpServer): void {
+    if (this.apiService) {
+      const portfolioService = new PortfolioService(this.apiService);
+      const portfolioToolRegistry = new PortfolioToolRegistry(
+        server,
+        portfolioService,
+      );
+      portfolioToolRegistry.register();
+    }
+  }
+
   private createMcpServerInstance(): McpServer {
     const server = new McpServer(
       { name: 'trade-republic-mcp-server', version: '0.1.0' },
       { capabilities: { tools: {}, prompts: {} } },
     );
     this.registerPromptsForServer(server);
+    this.registerToolsForServer(server);
     return server;
   }
 
