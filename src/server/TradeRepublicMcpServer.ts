@@ -6,7 +6,7 @@ import type { Express, Request, Response } from 'express';
 import { logger } from '../logger';
 import { PortfolioService } from './services/PortfolioService';
 import type { TradeRepublicApiService } from './services/TradeRepublicApiService';
-import { PortfolioToolRegistry } from './tools/PortfolioToolRegistry';
+import { PortfolioToolRegistry } from './tools';
 
 export class TradeRepublicMcpServer {
   private readonly app: Express;

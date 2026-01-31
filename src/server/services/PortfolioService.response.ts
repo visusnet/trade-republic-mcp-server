@@ -11,7 +11,7 @@ import { z } from 'zod';
  * Portfolio position schema
  * Handles field name variations between different API versions
  */
-export const PortfolioPositionSchema = z
+const PortfolioPositionSchema = z
   .object({
     instrumentId: z.string(),
     netSize: z.union([z.number(), z.string()]).transform((v) => Number(v)),

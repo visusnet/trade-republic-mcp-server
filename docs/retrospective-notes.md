@@ -94,3 +94,23 @@
 2. Added `public` modifiers to all public methods in existing code
 
 ---
+
+## Issue 008: Unused barrel exports causing knip failures
+**Date:** 2026-01-31
+**Status:** ADDRESSED
+
+**Issue:** `src/server/tools/index.ts` was created as a barrel file but nothing imported from it, causing knip to flag it as unused. Also `PortfolioPositionSchema` was exported but only used internally.
+
+**Context:** Barrel files (index.ts re-exports) are useful for clean imports but must be actually used. Internal schemas should not be exported unless needed externally.
+
+**Decision:**
+1. Use barrel imports in consumer files (TradeRepublicMcpServer imports from `./tools`)
+2. Only export what is actually needed externally
+3. Keep internal schemas private (no export keyword)
+
+**Action Taken:**
+1. Updated TradeRepublicMcpServer.ts to import from `./tools` instead of `./tools/PortfolioToolRegistry`
+2. Removed `export` from `PortfolioPositionSchema` (internal only)
+3. Removed unused `ToolRegistry` export from tools/index.ts (base class, internal only)
+
+---
