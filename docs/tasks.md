@@ -47,8 +47,8 @@ README, usage guide, and any remaining ADRs.
 
 | Task | Status | Plan | Implementation | Review |
 |------|--------|------|----------------|--------|
-| 01 | pending | - | - | - |
-| 02 | pending | - | - | - |
+| 01 | completed | done | done | done |
+| 02 | completed | N/A | done | done |
 | 03 | pending | - | - | - |
 | 04 | pending | - | - | - |
 | 05 | pending | - | - | - |
