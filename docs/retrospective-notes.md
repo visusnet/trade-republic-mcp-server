@@ -50,3 +50,17 @@
 **Action Taken:** The index.ts exclusion in jest.config.js is still present but the file now has real code. However, index.ts is the entry point that just starts the server - testing it would require integration tests. The exclusion remains appropriate for now.
 
 ---
+
+## Issue 005: Task 04 review suggestions for future improvement
+**Date:** 2026-01-31
+**Status:** NOTED
+
+**Issue:** Code review identified two nice-to-have improvements for the TradeRepublicApiService:
+1. **Reconnection handling:** If WebSocket disconnects unexpectedly, there's no automatic reconnection. Users must manually disconnect and re-authenticate.
+2. **Token refresh race condition:** Multiple concurrent calls to `ensureValidSession()` could trigger multiple refresh requests.
+
+**Context:** These are edge cases that don't affect current functionality. The implementation is correct and complete for the initial scope.
+
+**Decision:** Document for future consideration. These can be addressed in Task 12 (Integration Testing) or as part of production hardening.
+
+---
