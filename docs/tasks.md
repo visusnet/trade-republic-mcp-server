@@ -49,7 +49,7 @@ README, usage guide, and any remaining ADRs.
 |------|--------|------|----------------|--------|
 | 01 | completed | done | done | done |
 | 02 | completed | N/A | done | done |
-| 03 | pending | - | - | - |
+| 03 | completed | done | done | done |
 | 04 | pending | - | - | - |
 | 05 | pending | - | - | - |
 | 06 | pending | - | - | - |
