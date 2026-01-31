@@ -81,7 +81,7 @@ export class TradeRepublicApiService {
   /**
    * Initializes the service by loading or generating ECDSA key pair.
    */
-  async initialize(): Promise<void> {
+  public async initialize(): Promise<void> {
     logger.api.info('Initializing TradeRepublicApiService');
 
     if (await this.crypto.hasStoredKeyPair()) {
@@ -101,7 +101,9 @@ export class TradeRepublicApiService {
    * Initiates login with phone number and PIN.
    * Returns the processId needed for 2FA verification.
    */
-  async login(credentials: CredentialsInput): Promise<{ processId: string }> {
+  public async login(
+    credentials: CredentialsInput,
+  ): Promise<{ processId: string }> {
     this.ensureInitialized();
 
     // Validate credentials
@@ -150,7 +152,7 @@ export class TradeRepublicApiService {
   /**
    * Completes 2FA verification with the code received via SMS.
    */
-  async verify2FA(input: TwoFactorCodeInput): Promise<void> {
+  public async verify2FA(input: TwoFactorCodeInput): Promise<void> {
     this.ensureInitialized();
 
     if (this.authStatus !== AuthStatus.AWAITING_2FA) {
@@ -224,7 +226,7 @@ export class TradeRepublicApiService {
   /**
    * Refreshes the session token using the refresh token.
    */
-  async refreshSession(): Promise<void> {
+  public async refreshSession(): Promise<void> {
     this.ensureInitialized();
 
     if (this.authStatus !== AuthStatus.AUTHENTICATED || !this.sessionTokens) {
@@ -267,7 +269,7 @@ export class TradeRepublicApiService {
   /**
    * Ensures the session is valid, refreshing if needed.
    */
-  async ensureValidSession(): Promise<void> {
+  public async ensureValidSession(): Promise<void> {
     this.ensureInitialized();
 
     if (this.authStatus !== AuthStatus.AUTHENTICATED || !this.sessionTokens) {
@@ -287,7 +289,7 @@ export class TradeRepublicApiService {
    * Subscribes to a topic with optional payload.
    * Returns the subscription ID.
    */
-  subscribe(input: SubscribeRequestInput): number {
+  public subscribe(input: SubscribeRequestInput): number {
     const validationResult = SubscribeRequestSchema.safeParse(input);
     if (!validationResult.success) {
       throw new TradeRepublicError(
@@ -303,21 +305,21 @@ export class TradeRepublicApiService {
   /**
    * Unsubscribes from a subscription by ID.
    */
-  unsubscribe(subscriptionId: number): void {
+  public unsubscribe(subscriptionId: number): void {
     this.ws.unsubscribe(subscriptionId);
   }
 
   /**
    * Returns the current authentication status.
    */
-  getAuthStatus(): AuthStatus {
+  public getAuthStatus(): AuthStatus {
     return this.authStatus;
   }
 
   /**
    * Disconnects from the API and cleans up resources.
    */
-  disconnect(): void {
+  public disconnect(): void {
     logger.api.info('Disconnecting from Trade Republic API');
     this.ws.disconnect();
     this.authStatus = AuthStatus.UNAUTHENTICATED;
@@ -328,21 +330,21 @@ export class TradeRepublicApiService {
   /**
    * Registers a handler for incoming WebSocket messages.
    */
-  onMessage(handler: (message: WebSocketMessage) => void): void {
+  public onMessage(handler: (message: WebSocketMessage) => void): void {
     this.messageHandlers.push(handler);
   }
 
   /**
    * Registers a handler for errors.
    */
-  onError(handler: (error: Error | WebSocketMessage) => void): void {
+  public onError(handler: (error: Error | WebSocketMessage) => void): void {
     this.errorHandlers.push(handler);
   }
 
   /**
    * Removes a message handler.
    */
-  offMessage(handler: (message: WebSocketMessage) => void): void {
+  public offMessage(handler: (message: WebSocketMessage) => void): void {
     const index = this.messageHandlers.indexOf(handler);
     if (index !== -1) {
       this.messageHandlers.splice(index, 1);
@@ -352,7 +354,7 @@ export class TradeRepublicApiService {
   /**
    * Removes an error handler.
    */
-  offError(handler: (error: Error | WebSocketMessage) => void): void {
+  public offError(handler: (error: Error | WebSocketMessage) => void): void {
     const index = this.errorHandlers.indexOf(handler);
     if (index !== -1) {
       this.errorHandlers.splice(index, 1);

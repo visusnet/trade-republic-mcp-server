@@ -78,3 +78,19 @@
 **Action Required:** In Task 12, capture real API responses and update the schemas to be strict (remove `.passthrough()`).
 
 ---
+
+## Issue 007: Explicit public visibility modifiers
+**Date:** 2026-01-31
+**Status:** ADDRESSED
+
+**Issue:** The coinbase-mcp-server enforces explicit `public` visibility modifiers on all public methods. While `public` is the default in TypeScript, explicitly marking methods as `public` helps distinguish intentionally public methods from those that were accidentally left public.
+
+**Context:** Current code omits `public` when it's the default. This can lead to confusion about whether a method was meant to be public or if the developer forgot to add `private`.
+
+**Decision:** Add explicit `public` modifiers to all intentionally public methods.
+
+**Action Taken:**
+1. Added `@typescript-eslint/explicit-member-accessibility` rule to ESLint config (constructors excluded)
+2. Added `public` modifiers to all public methods in existing code
+
+---

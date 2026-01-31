@@ -32,7 +32,7 @@ export class PortfolioService {
     private readonly timeoutMs: number = DEFAULT_SUBSCRIPTION_TIMEOUT_MS,
   ) {}
 
-  async getPortfolio(
+  public async getPortfolio(
     _request?: GetPortfolioRequest,
   ): Promise<GetPortfolioResponse> {
     this.ensureAuthenticated();
@@ -43,7 +43,7 @@ export class PortfolioService {
     );
   }
 
-  async getCashBalance(
+  public async getCashBalance(
     _request?: GetCashBalanceRequest,
   ): Promise<GetCashBalanceResponse> {
     this.ensureAuthenticated();

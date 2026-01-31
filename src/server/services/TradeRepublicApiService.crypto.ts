@@ -36,7 +36,7 @@ export class CryptoManager {
   /**
    * Generates a new ECDSA P-256 key pair.
    */
-  async generateKeyPair(): Promise<KeyPair> {
+  public async generateKeyPair(): Promise<KeyPair> {
     return new Promise((resolve, reject) => {
       crypto.generateKeyPair(
         'ec',
@@ -60,7 +60,7 @@ export class CryptoManager {
   /**
    * Saves a key pair to the file system.
    */
-  async saveKeyPair(keyPair: KeyPair): Promise<void> {
+  public async saveKeyPair(keyPair: KeyPair): Promise<void> {
     logger.api.info(`Saving key pair to ${this.keyFilePath}`);
     await this.fileSystem.mkdir(this.baseDir, { recursive: true });
     await this.fileSystem.writeFile(
@@ -73,7 +73,7 @@ export class CryptoManager {
    * Loads a key pair from the file system.
    * Returns null if no key pair exists.
    */
-  async loadKeyPair(): Promise<KeyPair | null> {
+  public async loadKeyPair(): Promise<KeyPair | null> {
     const exists = await this.fileSystem.exists(this.keyFilePath);
     if (!exists) {
       return null;
@@ -86,7 +86,7 @@ export class CryptoManager {
   /**
    * Checks if a stored key pair exists.
    */
-  async hasStoredKeyPair(): Promise<boolean> {
+  public async hasStoredKeyPair(): Promise<boolean> {
     return this.fileSystem.exists(this.keyFilePath);
   }
 
@@ -94,7 +94,7 @@ export class CryptoManager {
    * Signs a message using ECDSA with SHA-512.
    * Returns a base64-encoded signature.
    */
-  sign(message: string, privateKeyPem: string): string {
+  public sign(message: string, privateKeyPem: string): string {
     const sign = crypto.createSign('SHA512');
     sign.update(message);
     sign.end();
@@ -105,7 +105,10 @@ export class CryptoManager {
   /**
    * Creates a signed payload with timestamp and signature.
    */
-  createSignedPayload(data: object, privateKeyPem: string): SignedPayload {
+  public createSignedPayload(
+    data: object,
+    privateKeyPem: string,
+  ): SignedPayload {
     const timestamp = new Date().toISOString();
     const dataToSign = JSON.stringify({ timestamp, data });
     const signature = this.sign(dataToSign, privateKeyPem);
@@ -116,7 +119,7 @@ export class CryptoManager {
    * Exports the raw public key as base64.
    * Returns the uncompressed EC point (65 bytes for P-256).
    */
-  getPublicKeyBase64(publicKeyPem: string): string {
+  public getPublicKeyBase64(publicKeyPem: string): string {
     const publicKey = crypto.createPublicKey(publicKeyPem);
     const rawKey = publicKey.export({ type: 'spki', format: 'der' });
     // SPKI format for EC key: 26 byte header + 65 byte public key point

@@ -37,7 +37,7 @@ export class WebSocketManager extends EventEmitter {
   /**
    * Establishes a WebSocket connection with the given session token.
    */
-  async connect(sessionToken: string): Promise<void> {
+  public async connect(sessionToken: string): Promise<void> {
     if (this.status !== ConnectionStatus.DISCONNECTED) {
       throw new WebSocketError('Already connected or connecting');
     }
@@ -110,7 +110,7 @@ export class WebSocketManager extends EventEmitter {
   /**
    * Disconnects the WebSocket connection.
    */
-  disconnect(): void {
+  public disconnect(): void {
     if (this.ws) {
       logger.api.info('Disconnecting WebSocket');
       this.ws.removeAllListeners();
@@ -123,7 +123,7 @@ export class WebSocketManager extends EventEmitter {
   /**
    * Returns the current connection status.
    */
-  getStatus(): ConnectionStatus {
+  public getStatus(): ConnectionStatus {
     return this.status;
   }
 
@@ -131,7 +131,7 @@ export class WebSocketManager extends EventEmitter {
    * Subscribes to a topic with optional payload.
    * Returns the subscription ID.
    */
-  subscribe(topic: string, payload?: object): number {
+  public subscribe(topic: string, payload?: object): number {
     if (!this.ws || this.status !== ConnectionStatus.CONNECTED) {
       throw new WebSocketError('Not connected');
     }
@@ -151,7 +151,7 @@ export class WebSocketManager extends EventEmitter {
   /**
    * Unsubscribes from a subscription by ID.
    */
-  unsubscribe(subscriptionId: number): void {
+  public unsubscribe(subscriptionId: number): void {
     if (!this.ws || this.status !== ConnectionStatus.CONNECTED) {
       throw new WebSocketError('Not connected');
     }

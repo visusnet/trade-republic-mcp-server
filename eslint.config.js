@@ -24,6 +24,10 @@ export default tseslint.config(
         'error',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
+      '@typescript-eslint/explicit-member-accessibility': [
+        'error',
+        { accessibility: 'explicit', overrides: { constructors: 'no-public' } },
+      ],
       '@typescript-eslint/explicit-function-return-type': 'off',
       '@typescript-eslint/no-empty-object-type': 'off',
       '@typescript-eslint/restrict-template-expressions': 'off',
