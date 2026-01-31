@@ -44,6 +44,27 @@ export * from './TechnicalAnalysisService.response';
 export { TechnicalAnalysisError } from './TechnicalAnalysisService.types';
 export { TechnicalAnalysisService } from './TechnicalAnalysisService';
 
+// Symbol Mapper exports
+export { SymbolMapper, SymbolMapperError, IsinSchema } from './SymbolMapper';
+
+// News Service exports
+export * from './NewsService.request';
+export * from './NewsService.response';
+export { NewsServiceError } from './NewsService.types';
+export { NewsService } from './NewsService';
+
+// Sentiment Service exports
+export * from './SentimentService.request';
+export * from './SentimentService.response';
+export { SentimentServiceError } from './SentimentService.types';
+export { SentimentService } from './SentimentService';
+
+// Fundamentals Service exports
+export * from './FundamentalsService.request';
+export * from './FundamentalsService.response';
+export { FundamentalsServiceError } from './FundamentalsService.types';
+export { FundamentalsService } from './FundamentalsService';
+
 /**
  * Default file system implementation using Node.js fs module.
  */

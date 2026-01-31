@@ -58,6 +58,21 @@ import {
   GetDetailedAnalysisRequestSchema,
   GetIndicatorsResponseSchema,
   GetDetailedAnalysisResponseSchema,
+  SymbolMapper,
+  SymbolMapperError,
+  IsinSchema,
+  NewsService,
+  NewsServiceError,
+  GetNewsRequestSchema,
+  GetNewsResponseSchema,
+  SentimentService,
+  SentimentServiceError,
+  GetSentimentRequestSchema,
+  GetSentimentResponseSchema,
+  FundamentalsService,
+  FundamentalsServiceError,
+  GetFundamentalsRequestSchema,
+  GetFundamentalsResponseSchema,
   type FileSystem,
 } from './index';
 
@@ -128,6 +143,33 @@ describe('Services Index', () => {
     it('should export TechnicalAnalysis response schemas', () => {
       expect(GetIndicatorsResponseSchema).toBeDefined();
       expect(GetDetailedAnalysisResponseSchema).toBeDefined();
+    });
+
+    it('should export SymbolMapper and related', () => {
+      expect(SymbolMapper).toBeDefined();
+      expect(SymbolMapperError).toBeDefined();
+      expect(IsinSchema).toBeDefined();
+    });
+
+    it('should export NewsService and related', () => {
+      expect(NewsService).toBeDefined();
+      expect(NewsServiceError).toBeDefined();
+      expect(GetNewsRequestSchema).toBeDefined();
+      expect(GetNewsResponseSchema).toBeDefined();
+    });
+
+    it('should export SentimentService and related', () => {
+      expect(SentimentService).toBeDefined();
+      expect(SentimentServiceError).toBeDefined();
+      expect(GetSentimentRequestSchema).toBeDefined();
+      expect(GetSentimentResponseSchema).toBeDefined();
+    });
+
+    it('should export FundamentalsService and related', () => {
+      expect(FundamentalsService).toBeDefined();
+      expect(FundamentalsServiceError).toBeDefined();
+      expect(GetFundamentalsRequestSchema).toBeDefined();
+      expect(GetFundamentalsResponseSchema).toBeDefined();
     });
   });
 

@@ -95,6 +95,37 @@
 
 ---
 
+## Issue 010: Quality checks must pass before commit
+**Date:** 2026-01-31
+**Status:** ADDRESSED
+
+**Issue:** Pipeline has failed multiple times due to failing quality checks.
+
+**Context:** The full verification command must pass before any commit:
+```bash
+npm run test:types && npm run lint:fix && npm run format && npm run test:coverage && npm run knip && npm run build
+```
+
+**Decision:** Implementation agents MUST run all quality checks after completing implementation and fix any failures before reporting completion.
+
+**Action Taken:** All quality checks verified passing before Task 08 commit (546 tests, 100% coverage).
+
+---
+
+## Issue 009: SentimentService should use finance-specific vocabulary
+**Date:** 2026-01-31
+**Status:** ADDRESSED
+
+**Issue:** The `sentiment` npm library uses a generic AFINN-165 wordlist that doesn't include finance-specific terms like "bullish", "bearish", "upgrade", "downgrade", etc.
+
+**Context:** For trading context, generic sentiment analysis may miss important financial vocabulary or misinterpret terms like "short" (shorting stock) or "put" (put options).
+
+**Decision:** Create a finance-specific word list (`SentimentService.wordlist.ts`) with ~60 financial terms and their sentiment scores (-5 to +5). Pass this to the sentiment analyzer using the `extras` option.
+
+**Action Taken:** Created `SentimentService.wordlist.ts` with ~100 finance-specific terms (bullish/bearish signals, analyst actions, trading terms) and integrated it into `SentimentService.ts` using the `extras` option.
+
+---
+
 ## Issue 008: Unused barrel exports causing knip failures
 **Date:** 2026-01-31
 **Status:** ADDRESSED

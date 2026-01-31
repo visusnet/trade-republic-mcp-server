@@ -4,11 +4,16 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import type { Express, Request, Response } from 'express';
 
 import { logger } from '../logger';
+import { FundamentalsService } from './services/FundamentalsService';
 import { MarketDataService } from './services/MarketDataService';
+import { NewsService } from './services/NewsService';
 import { PortfolioService } from './services/PortfolioService';
+import { SentimentService } from './services/SentimentService';
+import { SymbolMapper } from './services/SymbolMapper';
 import { TechnicalAnalysisService } from './services/TechnicalAnalysisService';
 import type { TradeRepublicApiService } from './services/TradeRepublicApiService';
 import {
+  ExternalDataToolRegistry,
   MarketDataToolRegistry,
   PortfolioToolRegistry,
   TechnicalAnalysisToolRegistry,
@@ -131,6 +136,20 @@ BEST PRACTICES:
       );
       technicalAnalysisToolRegistry.register();
     }
+
+    // External data tools don't require authentication
+    const symbolMapper = new SymbolMapper();
+    const newsService = new NewsService({ symbolMapper });
+    const sentimentService = new SentimentService({ newsService });
+    const fundamentalsService = new FundamentalsService({ symbolMapper });
+
+    const externalDataToolRegistry = new ExternalDataToolRegistry(
+      server,
+      newsService,
+      sentimentService,
+      fundamentalsService,
+    );
+    externalDataToolRegistry.register();
   }
 
   private createMcpServerInstance(): McpServer {

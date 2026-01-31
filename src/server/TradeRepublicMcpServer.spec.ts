@@ -139,7 +139,7 @@ describe('TradeRepublicMcpServer', () => {
       expect(toolNames).toContain('wait_for_market');
     });
 
-    it('should register all 11 tools when apiService is provided', async () => {
+    it('should register all 14 tools when apiService is provided', async () => {
       const mockApiService = createMockApiService();
       const serverWithApi = new TradeRepublicMcpServer(mockApiService);
       const mcpServerWithApi = serverWithApi.getMcpServer();
@@ -156,8 +156,8 @@ describe('TradeRepublicMcpServer', () => {
       ]);
 
       const tools = await clientWithApi.listTools({});
-      // 2 portfolio tools + 7 market data tools + 2 technical analysis tools = 11 total
-      expect(tools.tools).toHaveLength(11);
+      // 2 portfolio + 7 market data + 2 technical analysis + 3 external data = 14 total
+      expect(tools.tools).toHaveLength(14);
     });
   });
 
@@ -182,6 +182,50 @@ describe('TradeRepublicMcpServer', () => {
       const toolNames = tools.tools.map((t) => t.name);
       expect(toolNames).toContain('get_indicators');
       expect(toolNames).toContain('get_detailed_analysis');
+    });
+  });
+
+  describe('External Data Tools', () => {
+    it('should register external data tools even without apiService', async () => {
+      const serverWithoutApi = new TradeRepublicMcpServer();
+      const mcpServer = serverWithoutApi.getMcpServer();
+
+      const testClient = new Client(
+        { name: 'test-client', version: '1.0.0' },
+        { capabilities: {} },
+      );
+      const [clientTransport, serverTransport] =
+        InMemoryTransport.createLinkedPair();
+      await Promise.all([
+        testClient.connect(clientTransport),
+        mcpServer.connect(serverTransport),
+      ]);
+
+      const tools = await testClient.listTools({});
+      const toolNames = tools.tools.map((t) => t.name);
+      expect(toolNames).toContain('get_news');
+      expect(toolNames).toContain('get_sentiment');
+      expect(toolNames).toContain('get_fundamentals');
+    });
+
+    it('should register 3 external data tools without apiService', async () => {
+      const serverWithoutApi = new TradeRepublicMcpServer();
+      const mcpServer = serverWithoutApi.getMcpServer();
+
+      const testClient = new Client(
+        { name: 'test-client', version: '1.0.0' },
+        { capabilities: {} },
+      );
+      const [clientTransport, serverTransport] =
+        InMemoryTransport.createLinkedPair();
+      await Promise.all([
+        testClient.connect(clientTransport),
+        mcpServer.connect(serverTransport),
+      ]);
+
+      const tools = await testClient.listTools({});
+      // Only 3 external data tools are available without apiService
+      expect(tools.tools).toHaveLength(3);
     });
   });
 
