@@ -18,8 +18,9 @@
 
 # Workflow
 
-IMPORTANT: This workflow MUST be followed STRICTLY. It is SACRED. <reasoning>Following a structured workflow ensures quality, maintainability, and reduces the likelihood of errors.</reasoning>
-GATHER DATA: Whenever you detect that something went wrong or could be improved (with the workflow, with the implementation, with the tests, with how you are following the rules, even with this document, ... anything that occurs to you), you MUST document the issue in `docs/retrospective-notes.md` IMMEDIATELY. <reasoning>This is crucial for continuous improvement and ensuring that issues are addressed promptly.</reasoning>
+**IMPORTANT:** This workflow MUST be followed STRICTLY. It is SACRED. <reasoning>Following a structured workflow ensures quality, maintainability, and reduces the likelihood of errors.</reasoning>
+**GATHER DATA:** Whenever you detect that something went wrong or could be improved (with the workflow, with the implementation, with the tests, with how you are following the rules, even with this document, ... anything that occurs to you), you MUST document the issue in `docs/retrospective-notes.md` IMMEDIATELY. <reasoning>This is crucial for continuous improvement and ensuring that issues are addressed promptly.</reasoning>
+**MODELS:** You are allowed to use different models (opus-4.5, sonnet-4.5, haiku-4.5) for different sub-tasks (planning, implementation, review, ...). Choose the model that is best suited for the specific sub-task at hand. <reasoning>Some tasks require more reasoning and creativity while others just need to follow strict rules. Using the right model for the right task optimizes model costs.</reasoning>
 
 Files:
 - task list file: `docs/tasks.md`
@@ -37,8 +38,11 @@ Files:
 5. Start a sub agent to implement the final task plan by following the TDD red-green-refactor cycle.
 6. Let at least two sub agents review the implementation for correctness, completeness, and code quality and fix any issues found.
 7. Go over the retrospective notes and address any issues found NOW. Mark addressed issues as addressed (do not remove them - keeping history helps remember previous issues and solutions).
-8. Create a conventional commit for the completed task.
-9. Repeat for the next task until all tasks are completed.
+8. Create a conventional commit for the completed task and push it.
+9. Repeat for the next task until all tasks are completed without asking.
+10. Run at least 5 code review sub agents that independently review the entire codebase for correctness, (feature) completeness, sanity, rules compliance and code quality. Each code reviewer shall have a different background so that there are multiple perspectives. Fix any issues found. Commit and push any changes.
+11. Run at least 3 product review sub agents that independently review the entire project for compliance with the project goals and intended use cases. Each product reviewer shall have a different background so that there are multiple perspectives. Fix any issues found. Commit and push any changes.
+12. Go over the retrospective notes and make sure there are no remaining unaddressed issues. Address any remaining issues NOW. Mark addressed issues as addressed (do not remove them - keeping history helps remember previous issues and solutions). Commit and push any changes.
 
 # Code Quality
 - Use ESLint with the recommended TypeScript rules. (npm run lint)
