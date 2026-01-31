@@ -37,6 +37,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.25.2",
+    "@thuantan2060/technicalindicators": "^4.1.3",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
     "pino": "^10.3.0",

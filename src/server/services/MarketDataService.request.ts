@@ -12,9 +12,8 @@ export const DEFAULT_EXCHANGE = 'LSX';
 
 /**
  * Time range options for price history requests.
- * @internal
  */
-const TimeRangeSchema = z.enum([
+export const TimeRangeSchema = z.enum([
   '1d',
   '5d',
   '1m',

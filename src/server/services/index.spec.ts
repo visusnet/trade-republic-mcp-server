@@ -52,6 +52,12 @@ import {
   GetAssetInfoResponseSchema,
   GetMarketStatusResponseSchema,
   WaitForMarketResponseSchema,
+  TechnicalAnalysisService,
+  TechnicalAnalysisError,
+  GetIndicatorsRequestSchema,
+  GetDetailedAnalysisRequestSchema,
+  GetIndicatorsResponseSchema,
+  GetDetailedAnalysisResponseSchema,
   type FileSystem,
 } from './index';
 
@@ -104,6 +110,24 @@ describe('Services Index', () => {
       expect(GetAssetInfoResponseSchema).toBeDefined();
       expect(GetMarketStatusResponseSchema).toBeDefined();
       expect(WaitForMarketResponseSchema).toBeDefined();
+    });
+
+    it('should export TechnicalAnalysisService', () => {
+      expect(TechnicalAnalysisService).toBeDefined();
+    });
+
+    it('should export TechnicalAnalysisError', () => {
+      expect(TechnicalAnalysisError).toBeDefined();
+    });
+
+    it('should export TechnicalAnalysis request schemas', () => {
+      expect(GetIndicatorsRequestSchema).toBeDefined();
+      expect(GetDetailedAnalysisRequestSchema).toBeDefined();
+    });
+
+    it('should export TechnicalAnalysis response schemas', () => {
+      expect(GetIndicatorsResponseSchema).toBeDefined();
+      expect(GetDetailedAnalysisResponseSchema).toBeDefined();
     });
   });
 

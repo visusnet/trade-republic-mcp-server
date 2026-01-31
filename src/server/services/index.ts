@@ -38,6 +38,12 @@ export * from './MarketDataService.request';
 export * from './MarketDataService.response';
 export { MarketDataService } from './MarketDataService';
 
+// Technical Analysis Service exports
+export * from './TechnicalAnalysisService.request';
+export * from './TechnicalAnalysisService.response';
+export { TechnicalAnalysisError } from './TechnicalAnalysisService.types';
+export { TechnicalAnalysisService } from './TechnicalAnalysisService';
+
 /**
  * Default file system implementation using Node.js fs module.
  */

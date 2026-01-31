@@ -6,8 +6,13 @@ import type { Express, Request, Response } from 'express';
 import { logger } from '../logger';
 import { MarketDataService } from './services/MarketDataService';
 import { PortfolioService } from './services/PortfolioService';
+import { TechnicalAnalysisService } from './services/TechnicalAnalysisService';
 import type { TradeRepublicApiService } from './services/TradeRepublicApiService';
-import { MarketDataToolRegistry, PortfolioToolRegistry } from './tools';
+import {
+  MarketDataToolRegistry,
+  PortfolioToolRegistry,
+  TechnicalAnalysisToolRegistry,
+} from './tools';
 
 export class TradeRepublicMcpServer {
   private readonly app: Express;
@@ -116,6 +121,15 @@ BEST PRACTICES:
         marketDataService,
       );
       marketDataToolRegistry.register();
+
+      const technicalAnalysisService = new TechnicalAnalysisService(
+        marketDataService,
+      );
+      const technicalAnalysisToolRegistry = new TechnicalAnalysisToolRegistry(
+        server,
+        technicalAnalysisService,
+      );
+      technicalAnalysisToolRegistry.register();
     }
   }
 
