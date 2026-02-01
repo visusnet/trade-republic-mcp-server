@@ -29,6 +29,7 @@ export class WebSocketManager extends EventEmitter {
   private ws: WebSocket | null = null;
   private status: ConnectionStatus = ConnectionStatus.DISCONNECTED;
   private nextSubscriptionId = 1;
+  private previousResponses: Map<number, string> = new Map();
 
   constructor(private readonly wsFactory: WebSocketFactory) {
     super();
@@ -117,6 +118,7 @@ export class WebSocketManager extends EventEmitter {
       this.ws.close();
       this.ws = null;
     }
+    this.previousResponses.clear();
     this.status = ConnectionStatus.DISCONNECTED;
   }
 
@@ -200,12 +202,61 @@ export class WebSocketManager extends EventEmitter {
   }
 
   /**
+   * Calculates the full response from a delta payload using the previous response.
+   * Delta instructions are tab-separated:
+   * - +text: Insert URL-decoded text (remove leading +, replace + with space, URL-decode, trim)
+   * - -N: Skip N characters from previous response
+   * - =N: Copy N characters from previous response
+   *
+   * Matches pytr's lenient parsing: unknown instructions are silently skipped.
+   */
+  private calculateDelta(subscriptionId: number, deltaPayload: string): string {
+    const previousResponse = this.previousResponses.get(subscriptionId);
+    if (previousResponse === undefined) {
+      throw new WebSocketError(
+        `No previous response for subscription ${subscriptionId}`,
+      );
+    }
+
+    let i = 0;
+    const result: string[] = [];
+
+    for (const diff of deltaPayload.split('\t')) {
+      if (diff.length === 0) {
+        continue;
+      }
+
+      const sign = diff[0];
+      if (sign === '+') {
+        // Insert URL-decoded text (match pytr: unquote_plus + strip)
+        result.push(
+          decodeURIComponent(diff.substring(1).replace(/\+/g, ' ')).trim(),
+        );
+      } else if (sign === '-') {
+        // Skip N characters
+        i += parseInt(diff.substring(1), 10);
+      } else if (sign === '=') {
+        // Copy N characters from previous response
+        const count = parseInt(diff.substring(1), 10);
+        result.push(previousResponse.substring(i, i + count));
+        i += count;
+      }
+      // Unknown signs are silently skipped (matches pytr)
+    }
+
+    return result.join('');
+  }
+
+  /**
    * Parses a raw WebSocket message into a structured format.
    * Message format: "{id} {code} {json}"
+   *
+   * For Delta (D) messages, the payload is decoded using the previous response.
    */
   private parseMessage(messageStr: string): WebSocketMessage {
-    // Match: number, space, single letter (A/D/C/E), space, rest is JSON
-    const match = messageStr.match(/^(\d+)\s+([ADCE])\s+(.*)$/);
+    // Match: number, space, single letter (A/D/C/E), space, rest is payload
+    // Use /s flag to allow . to match newlines in the payload
+    const match = messageStr.match(/^(\d+)\s+([ADCE])\s+(.*)$/s);
 
     if (!match) {
       throw new WebSocketError(
@@ -213,8 +264,22 @@ export class WebSocketManager extends EventEmitter {
       );
     }
 
-    const [, idStr, code, jsonStr] = match;
+    const [, idStr, code, payloadStr] = match;
     const id = parseInt(idStr, 10);
+
+    let jsonStr: string;
+
+    if (code === MESSAGE_CODE.D) {
+      // Delta message: decode against previous response
+      jsonStr = this.calculateDelta(id, payloadStr);
+    } else {
+      jsonStr = payloadStr;
+    }
+
+    // Clean up on complete
+    if (code === MESSAGE_CODE.C) {
+      this.previousResponses.delete(id);
+    }
 
     let payload: unknown;
     try {
@@ -223,6 +288,11 @@ export class WebSocketManager extends EventEmitter {
       throw new WebSocketError(
         `Invalid JSON in message: ${jsonStr.substring(0, 50)}`,
       );
+    }
+
+    // Store for future delta calculations (A and D messages)
+    if (code === MESSAGE_CODE.A || code === MESSAGE_CODE.D) {
+      this.previousResponses.set(id, jsonStr);
     }
 
     return {

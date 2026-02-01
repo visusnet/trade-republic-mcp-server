@@ -265,17 +265,22 @@ describe('WebSocketManager', () => {
       } satisfies WebSocketMessage);
     });
 
-    it('should parse and emit Delta messages', () => {
+    it('should parse and emit Delta messages with proper decoding', () => {
       const handler = jest.fn();
       wsManager.on('message', handler);
 
       const subId = wsManager.subscribe('ticker');
-      mockWs.emit('message', Buffer.from(`${subId} D {"price":101.00}`));
+      // First send Answer to establish previous response
+      mockWs.emit('message', Buffer.from(`${subId} A {"price":100}`));
 
-      expect(handler).toHaveBeenCalledWith({
+      // Then send Delta: =10 copies "{"price":1", +01} inserts "01}"
+      // Result: {"price":101}
+      mockWs.emit('message', Buffer.from(`${subId} D =10\t+01}`));
+
+      expect(handler).toHaveBeenLastCalledWith({
         id: subId,
         code: MESSAGE_CODE.D,
-        payload: { price: 101.0 },
+        payload: { price: 101 },
       } satisfies WebSocketMessage);
     });
 
@@ -306,6 +311,337 @@ describe('WebSocketManager', () => {
         code: MESSAGE_CODE.A,
         payload: { price: 50.0 },
       } satisfies WebSocketMessage);
+    });
+  });
+
+  describe('delta message decoding', () => {
+    beforeEach(async () => {
+      const connectPromise = wsManager.connect('test-session-token');
+      mockWs.setReadyState(mockWs.OPEN);
+      mockWs.emit('open');
+      await connectPromise;
+    });
+
+    it('should decode delta with = (copy) instruction', () => {
+      const handler = jest.fn();
+      wsManager.on('message', handler);
+
+      const subId = wsManager.subscribe('ticker');
+      // First send an Answer message to establish previous response
+      mockWs.emit('message', Buffer.from(`${subId} A {"price":100}`));
+
+      // Then send a Delta message with copy instruction: copy first 10 chars + insert new ending
+      // Previous: {"price":100}
+      // Delta: =10 means copy "{"price":1" + then append via +
+      // =10 copies first 10 chars: {"price":1
+      // +50} inserts "50}"
+      // Result: {"price":150}
+      mockWs.emit('message', Buffer.from(`${subId} D =10\t+50}`));
+
+      expect(handler).toHaveBeenLastCalledWith({
+        id: subId,
+        code: MESSAGE_CODE.D,
+        payload: { price: 150 },
+      } satisfies WebSocketMessage);
+    });
+
+    it('should decode delta with + (insert) instruction', () => {
+      const handler = jest.fn();
+      wsManager.on('message', handler);
+
+      const subId = wsManager.subscribe('ticker');
+      // First establish previous response
+      mockWs.emit('message', Buffer.from(`${subId} A {"a":1}`));
+
+      // Delta: =5 copies {"a": then +2} inserts 2}
+      // Result: {"a":2}
+      mockWs.emit('message', Buffer.from(`${subId} D =5\t+2}`));
+
+      expect(handler).toHaveBeenLastCalledWith({
+        id: subId,
+        code: MESSAGE_CODE.D,
+        payload: { a: 2 },
+      } satisfies WebSocketMessage);
+    });
+
+    it('should decode delta with - (skip) instruction', () => {
+      const handler = jest.fn();
+      wsManager.on('message', handler);
+
+      const subId = wsManager.subscribe('ticker');
+      // Previous: {"price":100,"old":true}
+      mockWs.emit(
+        'message',
+        Buffer.from(`${subId} A {"price":100,"old":true}`),
+      );
+
+      // Delta: =13 copies {"price":100, then -11 skips "old":true, then +} to close
+      // =13 copies: {"price":100,
+      // -11 skips: "old":true
+      // +"new":false} inserts: "new":false}
+      // Result: {"price":100,"new":false}
+      mockWs.emit('message', Buffer.from(`${subId} D =13\t-11\t+"new":false}`));
+
+      expect(handler).toHaveBeenLastCalledWith({
+        id: subId,
+        code: MESSAGE_CODE.D,
+        payload: { price: 100, new: false },
+      } satisfies WebSocketMessage);
+    });
+
+    it('should decode delta with mixed instructions', () => {
+      const handler = jest.fn();
+      wsManager.on('message', handler);
+
+      const subId = wsManager.subscribe('data');
+      // Previous: {"foo":"bar","baz":123}
+      // Chars:     0123456789012345678901234
+      //            {"foo":"bar","baz":123}
+      // Length: 23 chars
+      mockWs.emit('message', Buffer.from(`${subId} A {"foo":"bar","baz":123}`));
+
+      // Mixed delta: copy 13, skip 3, insert new text, copy rest
+      // =13 copies positions 0-12: {"foo":"bar",
+      // -3 skips positions 13-15: "ba
+      // +qux inserts: qux
+      // =7 copies positions 16-22: z":123}
+      // Result: {"foo":"bar",quxz":123}  -- that's not valid JSON
+
+      // Let's do a simpler, correct example:
+      // Previous: {"a":1,"b":2}
+      // Chars:     0123456789012
+      // Length: 13 chars
+      mockWs.emit('message', Buffer.from(`${subId} A {"a":1,"b":2}`));
+
+      // Delta to change "b":2 to "c":3
+      // =6 copies positions 0-5: {"a":1
+      // -5 skips positions 6-10: ,"b":
+      // +,"c": inserts: ,"c":
+      // =2 copies positions 11-12: 2} - wait we want 3}
+      // Actually let's do:
+      // =6 copies: {"a":1
+      // -6 skips: ,"b":2
+      // +,"c":3} inserts the new ending
+      // Result: {"a":1,"c":3}
+      mockWs.emit('message', Buffer.from(`${subId} D =6\t-6\t+,"c":3}`));
+
+      expect(handler).toHaveBeenLastCalledWith({
+        id: subId,
+        code: MESSAGE_CODE.D,
+        payload: { a: 1, c: 3 },
+      } satisfies WebSocketMessage);
+    });
+
+    it('should decode URL-encoded characters in + instruction', () => {
+      const handler = jest.fn();
+      wsManager.on('message', handler);
+
+      const subId = wsManager.subscribe('ticker');
+      // Previous: {"text":"hi"}
+      mockWs.emit('message', Buffer.from(`${subId} A {"text":"hi"}`));
+
+      // Delta inserts URL-encoded content
+      // =9 copies: {"text":"
+      // +hello%20world"} inserts: hello world"} (URL decoded, %20 -> space)
+      mockWs.emit('message', Buffer.from(`${subId} D =9\t+hello%20world"}`));
+
+      expect(handler).toHaveBeenLastCalledWith({
+        id: subId,
+        code: MESSAGE_CODE.D,
+        payload: { text: 'hello world' },
+      } satisfies WebSocketMessage);
+    });
+
+    it('should decode + as space in URL-decoded content', () => {
+      const handler = jest.fn();
+      wsManager.on('message', handler);
+
+      const subId = wsManager.subscribe('ticker');
+      // Previous: {"text":"hi"}
+      mockWs.emit('message', Buffer.from(`${subId} A {"text":"hi"}`));
+
+      // + signs in content become spaces (URL encoding)
+      // =9 copies: {"text":"
+      // +hello+world"} inserts: hello world"} (+ -> space)
+      mockWs.emit('message', Buffer.from(`${subId} D =9\t+hello+world"}`));
+
+      expect(handler).toHaveBeenLastCalledWith({
+        id: subId,
+        code: MESSAGE_CODE.D,
+        payload: { text: 'hello world' },
+      } satisfies WebSocketMessage);
+    });
+
+    it('should throw error for delta without previous response', () => {
+      const errorHandler = jest.fn();
+      wsManager.on('error', errorHandler);
+
+      const subId = wsManager.subscribe('ticker');
+      // Send delta message without a previous Answer
+      mockWs.emit('message', Buffer.from(`${subId} D =10\t+new}`));
+
+      expect(errorHandler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringContaining('No previous response'),
+        }),
+      );
+    });
+
+    it('should silently skip unknown instruction types', () => {
+      const handler = jest.fn();
+      wsManager.on('message', handler);
+
+      const subId = wsManager.subscribe('ticker');
+      // Previous: {"a":1}
+      mockWs.emit('message', Buffer.from(`${subId} A {"a":1}`));
+
+      // Delta with unknown instruction 'X5' should be skipped
+      // =5 copies: {"a":
+      // X5 is unknown, skip it
+      // +2} inserts: 2}
+      mockWs.emit('message', Buffer.from(`${subId} D =5\t*unknown\t+2}`));
+
+      expect(handler).toHaveBeenLastCalledWith({
+        id: subId,
+        code: MESSAGE_CODE.D,
+        payload: { a: 2 },
+      } satisfies WebSocketMessage);
+    });
+
+    it('should clean up previousResponses on Complete message', () => {
+      const handler = jest.fn();
+      const errorHandler = jest.fn();
+      wsManager.on('message', handler);
+      wsManager.on('error', errorHandler);
+
+      const subId = wsManager.subscribe('ticker');
+      // Establish previous response
+      mockWs.emit('message', Buffer.from(`${subId} A {"price":100}`));
+
+      // Send complete message to clean up
+      mockWs.emit('message', Buffer.from(`${subId} C {}`));
+
+      // Now try to send delta - should fail because previous was cleaned up
+      mockWs.emit('message', Buffer.from(`${subId} D =10\t+50}`));
+
+      expect(errorHandler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringContaining('No previous response'),
+        }),
+      );
+    });
+
+    it('should store Answer message for future deltas', () => {
+      const handler = jest.fn();
+      wsManager.on('message', handler);
+
+      const subId = wsManager.subscribe('ticker');
+      // Send Answer - should be stored
+      mockWs.emit('message', Buffer.from(`${subId} A {"price":100}`));
+
+      // Send Delta - should work because Answer was stored
+      mockWs.emit('message', Buffer.from(`${subId} D =10\t+50}`));
+
+      expect(handler).toHaveBeenCalledTimes(2);
+      expect(handler).toHaveBeenLastCalledWith({
+        id: subId,
+        code: MESSAGE_CODE.D,
+        payload: { price: 150 },
+      } satisfies WebSocketMessage);
+    });
+
+    it('should store Delta result for subsequent deltas', () => {
+      const handler = jest.fn();
+      wsManager.on('message', handler);
+
+      const subId = wsManager.subscribe('ticker');
+      // Send Answer: {"price":100}
+      mockWs.emit('message', Buffer.from(`${subId} A {"price":100}`));
+
+      // Send Delta to change to {"price":150}
+      mockWs.emit('message', Buffer.from(`${subId} D =10\t+50}`));
+
+      // Send another Delta based on {"price":150} -> {"price":200}
+      // Previous: {"price":150}
+      // =10 copies: {"price":1
+      // -1 skips: 5
+      // +00} inserts: 00}
+      // Result: {"price":100} - wait that's wrong
+      // Let me recalculate:
+      // Previous: {"price":150} - 13 chars
+      // =10 copies: {"price":1
+      // +00} inserts: 00}
+      // Result: {"price":100}
+      // Actually let's do a simpler test:
+      // Previous: {"price":150}
+      // =10 copies: {"price":1
+      // -1 skips: 5
+      // +99} inserts: 99}
+      // Result: {"price":199}
+      mockWs.emit('message', Buffer.from(`${subId} D =10\t-1\t+99}`));
+
+      expect(handler).toHaveBeenLastCalledWith({
+        id: subId,
+        code: MESSAGE_CODE.D,
+        payload: { price: 199 },
+      } satisfies WebSocketMessage);
+    });
+
+    it('should handle empty diff segments gracefully', () => {
+      const handler = jest.fn();
+      wsManager.on('message', handler);
+
+      const subId = wsManager.subscribe('ticker');
+      // Previous: {"a":1}
+      mockWs.emit('message', Buffer.from(`${subId} A {"a":1}`));
+
+      // Delta with empty segments (double tabs)
+      mockWs.emit('message', Buffer.from(`${subId} D =5\t\t+2}`));
+
+      expect(handler).toHaveBeenLastCalledWith({
+        id: subId,
+        code: MESSAGE_CODE.D,
+        payload: { a: 2 },
+      } satisfies WebSocketMessage);
+    });
+  });
+
+  describe('disconnect clears previousResponses', () => {
+    it('should clear all previousResponses on disconnect', async () => {
+      const connectPromise = wsManager.connect('test-session-token');
+      mockWs.setReadyState(mockWs.OPEN);
+      mockWs.emit('open');
+      await connectPromise;
+
+      const errorHandler = jest.fn();
+      wsManager.on('error', errorHandler);
+
+      const subId = wsManager.subscribe('ticker');
+      // Establish previous response
+      mockWs.emit('message', Buffer.from(`${subId} A {"price":100}`));
+
+      // Disconnect
+      wsManager.disconnect();
+
+      // Reconnect
+      mockWs = createMockWebSocket();
+      mockWsFactory = jest.fn(() => mockWs as unknown as WebSocket);
+      wsManager = new WebSocketManager(mockWsFactory);
+      const reconnectPromise = wsManager.connect('test-session-token');
+      mockWs.setReadyState(mockWs.OPEN);
+      mockWs.emit('open');
+      await reconnectPromise;
+
+      wsManager.on('error', errorHandler);
+
+      // Try to send delta on same subId - should fail because previous was cleared
+      mockWs.emit('message', Buffer.from(`${subId} D =10\t+50}`));
+
+      expect(errorHandler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringContaining('No previous response'),
+        }),
+      );
     });
   });
 
