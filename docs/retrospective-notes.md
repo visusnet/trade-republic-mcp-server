@@ -175,3 +175,19 @@ npm run test:types && npm run lint:fix && npm run format && npm run test:coverag
 **Action Taken:** Verified all formulas against financial mathematics standards and documented corrections in the final plan.
 
 ---
+
+## Issue 012: toBeDefined tests are not valuable
+**Date:** 2026-01-31
+**Status:** ADDRESSED
+
+**Issue:** Tests using only `toBeDefined()` or `expect(x).toBeDefined()` do not provide meaningful coverage. They only verify that something exists, not that it works correctly.
+
+**Context:** Export tests in `index.spec.ts` used `toBeDefined()` assertions which pass as long as the export exists but don't verify behavior. This gives false confidence in test coverage.
+
+**Decision:** Tests must verify actual behavior, not just existence:
+- Bad: `expect(service).toBeDefined()`
+- Good: `expect(service.calculate(input)).toBe(expectedOutput)`
+
+**Action Taken:** Added rule to `.claude/rules/testing.md` requiring valuable tests that assert meaningful outcomes (correct return values, proper error handling, expected side effects).
+
+---

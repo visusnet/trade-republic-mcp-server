@@ -7,6 +7,7 @@ import { logger } from '../logger';
 import { FundamentalsService } from './services/FundamentalsService';
 import { MarketDataService } from './services/MarketDataService';
 import { NewsService } from './services/NewsService';
+import { OrderService } from './services/OrderService';
 import { PortfolioService } from './services/PortfolioService';
 import { RiskService } from './services/RiskService';
 import { SentimentService } from './services/SentimentService';
@@ -14,6 +15,7 @@ import { SymbolMapper } from './services/SymbolMapper';
 import { TechnicalAnalysisService } from './services/TechnicalAnalysisService';
 import type { TradeRepublicApiService } from './services/TradeRepublicApiService';
 import {
+  ExecutionToolRegistry,
   ExternalDataToolRegistry,
   MarketDataToolRegistry,
   PortfolioToolRegistry,
@@ -137,6 +139,13 @@ BEST PRACTICES:
         technicalAnalysisService,
       );
       technicalAnalysisToolRegistry.register();
+
+      const orderService = new OrderService(this.apiService);
+      const executionToolRegistry = new ExecutionToolRegistry(
+        server,
+        orderService,
+      );
+      executionToolRegistry.register();
     }
 
     // External data tools don't require authentication

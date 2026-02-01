@@ -1,24 +1,22 @@
 ---
-description: Testing standards and TDD practices
-globs: ["src/**/*.spec.ts", "src/**/*.test.ts"]
+description: Testing rules
+globs: ["src/**/*.spec.ts"]
 ---
 
-# Testing Rules
+## 100% Coverage Required
 
-## 100% test coverage required
+Run `npm run test:coverage` to verify.
 
-All code must have 100% test coverage. Run `npm run test:coverage` to verify.
+## TDD Red-Green-Refactor
 
-## Follow TDD red-green-refactor
+1. RED: Write failing test
+2. GREEN: Minimum code to pass
+3. REFACTOR: Clean up, keep tests green
 
-1. **RED**: Write ONE test that fails
-2. **GREEN**: Write minimum code to make the test pass
-3. **REFACTOR**: Clean up while keeping tests green
+## No Trivial Tests
 
-Do not write implementation before tests.
+- `toBeDefined()` alone is NOT acceptable
+- Tests must verify behavior, not existence
 
-## Mock external dependencies
-
-- Mock the logger in all test files
-- Mock external services (yahoo-finance2, sentiment, etc.)
-- Use dependency injection to enable mocking
+**Bad:** `expect(service).toBeDefined()`
+**Good:** `expect(service.calculate(input)).toBe(expectedOutput)`

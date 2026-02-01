@@ -1,23 +1,12 @@
 ---
-description: Rules for integrating external data sources
-globs: ["src/**/NewsService*", "src/**/SentimentService*", "src/**/FundamentalsService*", "src/**/External*"]
+description: External data source rules
+globs: ["src/**/NewsService*", "src/**/SentimentService*", "src/**/FundamentalsService*"]
 ---
 
-# External Data Source Rules
+## Data Sources Must Be FREE
 
-## Data sources must be FREE
+- NO API keys
+- NO "free tiers" with limits
+- NO registration
 
-When integrating external data sources:
-
-- NO API keys required
-- NO "free tiers" with rate limits
-- NO registration required
-
-## Verification required
-
-Document the free status verification in an ADR before implementation, including:
-
-- License (must be MIT, Apache, or similar)
-- Rate limits (document if any exist)
-- Known limitations
-- Alternatives considered
+Use: yahoo-finance2, sentiment npm packages.

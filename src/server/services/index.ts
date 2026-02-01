@@ -78,6 +78,12 @@ export {
 } from './RiskService.types';
 export { RiskService } from './RiskService';
 
+// Order Service exports
+export * from './OrderService.request';
+export * from './OrderService.response';
+export * from './OrderService.types';
+export { OrderService } from './OrderService';
+
 /**
  * Default file system implementation using Node.js fs module.
  */

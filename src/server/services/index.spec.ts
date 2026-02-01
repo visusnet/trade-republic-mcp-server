@@ -75,6 +75,14 @@ import {
   GetFundamentalsResponseSchema,
   RiskService,
   RiskServiceError,
+  OrderService,
+  OrderServiceError,
+  PlaceOrderRequestSchema,
+  GetOrdersRequestSchema,
+  CancelOrderRequestSchema,
+  PlaceOrderResponseSchema,
+  GetOrdersResponseSchema,
+  CancelOrderResponseSchema,
   type FileSystem,
 } from './index';
 
@@ -177,6 +185,17 @@ describe('Services Index', () => {
     it('should export RiskService and related', () => {
       expect(RiskService).toBeDefined();
       expect(RiskServiceError).toBeDefined();
+    });
+
+    it('should export OrderService and related', () => {
+      expect(OrderService).toBeDefined();
+      expect(OrderServiceError).toBeDefined();
+      expect(PlaceOrderRequestSchema).toBeDefined();
+      expect(GetOrdersRequestSchema).toBeDefined();
+      expect(CancelOrderRequestSchema).toBeDefined();
+      expect(PlaceOrderResponseSchema).toBeDefined();
+      expect(GetOrdersResponseSchema).toBeDefined();
+      expect(CancelOrderResponseSchema).toBeDefined();
     });
   });
 
