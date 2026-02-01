@@ -2283,6 +2283,8 @@ Based on your assessment, EXPLAIN your chosen weights.
 
 ### DISCREPANCY-018: Missing Delta Message Decoding (Trade Republic API)
 
+**Status:** RESOLVED (2026-02-01)
+
 **Source:** Task 13 (all 4 community projects: pytr, Trade_Republic_Connector, TradeRepublicApi, trade-republic-api)
 
 **Severity:** CRITICAL
@@ -2335,40 +2337,15 @@ def decode_updates(self, key, payload):
 - `-N`: Skip N characters
 - `=N`: Copy N characters from previous response
 
-**Our Implementation:**
-- No delta decoding in `TradeRepublicApiService.websocket.ts`
-- No previous response tracking
-- 'D' code messages fail to parse
+**Our Implementation (FIXED):**
+- Delta decoding implemented in `TradeRepublicApiService.websocket.ts`
+- Added `previousResponses: Map<number, string>` for response tracking
+- Implemented `calculateDelta()` method matching pytr's lenient parsing
+- Handle `+`, `-`, `=` diff instructions with URL decoding
+- Clean up stored responses on 'C' (complete) messages and disconnect()
+- Store JSON strings for 'A' and 'D' messages for future delta calculations
 
-**Impact:**
-- Portfolio updates fail
-- Price updates fail
-- All real-time incremental data broken
-
-**Fix Required:**
-```typescript
-private previousResponses: Map<number, string> = new Map();
-
-private calculateDelta(subscriptionId: number, deltaPayload: string): string {
-  const previousResponse = this.previousResponses.get(subscriptionId) || '';
-  let i = 0;
-  const result: string[] = [];
-
-  for (const diff of deltaPayload.split('\t')) {
-    const sign = diff[0];
-    if (sign === '+') {
-      result.push(decodeURIComponent(diff.substring(1).replace(/\+/g, ' ')));
-    } else if (sign === '-') {
-      i += parseInt(diff.substring(1), 10);
-    } else if (sign === '=') {
-      const count = parseInt(diff.substring(1), 10);
-      result.push(previousResponse.substring(i, i + count));
-      i += count;
-    }
-  }
-  return result.join('');
-}
-```
+**Resolution Commit:** fix: implement delta message decoding for WebSocket (DISCREPANCY-018)
 
 ---
 
@@ -2790,13 +2767,13 @@ Superior type-agnostic design:
 After all agents complete, fix discrepancies in this order:
 
 ### Priority 0: CRITICAL (Blocking Real-Time Data & API Compatibility)
-1. **DISCREPANCY-018 (TR API - all 4 projects):** Implement delta message decoding in WebSocketManager
-   - Add `previousResponses: Map<number, string>` to store last response per subscription
-   - Implement `calculateDelta(subscriptionId, deltaPayload)` method
-   - Handle `+`, `-`, `=` diff instructions with URL decoding
-   - Update `handleMessage()` to decode delta messages (code `D`)
-   - Clean up previous responses on subscription close (code `C`)
-   - Reference: pytr/api.py lines 355-386, TradeRepublicApi/api.py lines 822-865
+1. ~~**DISCREPANCY-018 (TR API - all 4 projects):** Implement delta message decoding in WebSocketManager~~ **RESOLVED (2026-02-01)**
+   - ~~Add `previousResponses: Map<number, string>` to store last response per subscription~~
+   - ~~Implement `calculateDelta(subscriptionId, deltaPayload)` method~~
+   - ~~Handle `+`, `-`, `=` diff instructions with URL decoding~~
+   - ~~Update `handleMessage()` to decode delta messages (code `D`)~~
+   - ~~Clean up previous responses on subscription close (code `C`)~~
+   - ~~Reference: pytr/api.py lines 355-386, TradeRepublicApi/api.py lines 822-865~~
 
 2. **DISCREPANCY-022 (TR API - TradeRepublicApi):** Fix topic name for historical data
    - Change `aggregateHistory` to `aggregateHistoryLight` in MarketDataService.ts
