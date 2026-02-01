@@ -88,114 +88,171 @@ import {
 
 describe('Services Index', () => {
   describe('exports', () => {
-    it('should export TradeRepublicApiService', () => {
-      expect(TradeRepublicApiService).toBeDefined();
-    });
-
-    it('should export CryptoManager', () => {
-      expect(CryptoManager).toBeDefined();
-    });
-
-    it('should export WebSocketManager', () => {
-      expect(WebSocketManager).toBeDefined();
-    });
-
-    it('should export DEFAULT_CONFIG_DIR', () => {
+    it('should export DEFAULT_CONFIG_DIR with correct value', () => {
       expect(DEFAULT_CONFIG_DIR).toBe('.trade-republic-mcp');
     });
 
-    it('should export PortfolioService', () => {
-      expect(PortfolioService).toBeDefined();
+    it('should export service classes that are constructable', () => {
+      // Verify classes are functions (constructable)
+      expect(typeof TradeRepublicApiService).toBe('function');
+      expect(typeof CryptoManager).toBe('function');
+      expect(typeof WebSocketManager).toBe('function');
+      expect(typeof PortfolioService).toBe('function');
+      expect(typeof MarketDataService).toBe('function');
+      expect(typeof TechnicalAnalysisService).toBe('function');
+      expect(typeof SymbolMapper).toBe('function');
+      expect(typeof NewsService).toBe('function');
+      expect(typeof SentimentService).toBe('function');
+      expect(typeof FundamentalsService).toBe('function');
+      expect(typeof RiskService).toBe('function');
+      expect(typeof OrderService).toBe('function');
     });
 
-    it('should export Portfolio request schemas', () => {
-      expect(GetPortfolioRequestSchema).toBeDefined();
-      expect(GetCashBalanceRequestSchema).toBeDefined();
+    it('should export error classes that extend Error', () => {
+      // Verify error classes are constructable and extend Error
+      const technicalError = new TechnicalAnalysisError('test');
+      expect(technicalError).toBeInstanceOf(Error);
+      expect(technicalError.name).toBe('TechnicalAnalysisError');
+
+      const symbolMapperError = new SymbolMapperError('test');
+      expect(symbolMapperError).toBeInstanceOf(Error);
+      expect(symbolMapperError.name).toBe('SymbolMapperError');
+
+      const newsError = new NewsServiceError('test');
+      expect(newsError).toBeInstanceOf(Error);
+      expect(newsError.name).toBe('NewsServiceError');
+
+      const sentimentError = new SentimentServiceError('test');
+      expect(sentimentError).toBeInstanceOf(Error);
+      expect(sentimentError.name).toBe('SentimentServiceError');
+
+      const fundamentalsError = new FundamentalsServiceError('test');
+      expect(fundamentalsError).toBeInstanceOf(Error);
+      expect(fundamentalsError.name).toBe('FundamentalsServiceError');
+
+      const riskError = new RiskServiceError('test');
+      expect(riskError).toBeInstanceOf(Error);
+      expect(riskError.name).toBe('RiskServiceError');
+
+      const orderError = new OrderServiceError('test');
+      expect(orderError).toBeInstanceOf(Error);
+      expect(orderError.name).toBe('OrderServiceError');
     });
 
-    it('should export MarketDataService', () => {
-      expect(MarketDataService).toBeDefined();
+    it('should export Portfolio schemas that parse valid input', () => {
+      const portfolioResult = GetPortfolioRequestSchema.safeParse({});
+      expect(portfolioResult.success).toBe(true);
+
+      const cashBalanceResult = GetCashBalanceRequestSchema.safeParse({});
+      expect(cashBalanceResult.success).toBe(true);
     });
 
-    it('should export MarketData request schemas', () => {
-      expect(GetPriceRequestSchema).toBeDefined();
-      expect(GetPriceHistoryRequestSchema).toBeDefined();
-      expect(GetOrderBookRequestSchema).toBeDefined();
-      expect(SearchAssetsRequestSchema).toBeDefined();
-      expect(GetAssetInfoRequestSchema).toBeDefined();
-      expect(GetMarketStatusRequestSchema).toBeDefined();
-      expect(WaitForMarketRequestSchema).toBeDefined();
+    it('should export MarketData request schemas that parse valid input', () => {
+      expect(
+        GetPriceRequestSchema.safeParse({ isin: 'DE0007164600' }).success,
+      ).toBe(true);
+      expect(
+        GetPriceHistoryRequestSchema.safeParse({
+          isin: 'DE0007164600',
+          range: '1d',
+        }).success,
+      ).toBe(true);
+      expect(
+        GetOrderBookRequestSchema.safeParse({ isin: 'DE0007164600' }).success,
+      ).toBe(true);
+      expect(
+        SearchAssetsRequestSchema.safeParse({ query: 'BMW' }).success,
+      ).toBe(true);
+      expect(
+        GetAssetInfoRequestSchema.safeParse({ isin: 'DE0007164600' }).success,
+      ).toBe(true);
+      expect(
+        GetMarketStatusRequestSchema.safeParse({ isin: 'DE0007164600' })
+          .success,
+      ).toBe(true);
+      expect(
+        WaitForMarketRequestSchema.safeParse({ isin: 'DE0007164600' }).success,
+      ).toBe(true);
     });
 
-    it('should export MarketData response schemas', () => {
-      expect(GetPriceResponseSchema).toBeDefined();
-      expect(GetPriceHistoryResponseSchema).toBeDefined();
-      expect(GetOrderBookResponseSchema).toBeDefined();
-      expect(SearchAssetsResponseSchema).toBeDefined();
-      expect(GetAssetInfoResponseSchema).toBeDefined();
-      expect(GetMarketStatusResponseSchema).toBeDefined();
-      expect(WaitForMarketResponseSchema).toBeDefined();
+    it('should export MarketData response schemas with correct structure', () => {
+      // Verify schemas have shape property (are Zod objects)
+      expect(typeof GetPriceResponseSchema.shape).toBe('object');
+      expect(typeof GetPriceHistoryResponseSchema.shape).toBe('object');
+      expect(typeof GetOrderBookResponseSchema.shape).toBe('object');
+      expect(typeof SearchAssetsResponseSchema.shape).toBe('object');
+      expect(typeof GetAssetInfoResponseSchema.shape).toBe('object');
+      expect(typeof GetMarketStatusResponseSchema.shape).toBe('object');
+      expect(typeof WaitForMarketResponseSchema.shape).toBe('object');
     });
 
-    it('should export TechnicalAnalysisService', () => {
-      expect(TechnicalAnalysisService).toBeDefined();
+    it('should export TechnicalAnalysis schemas that parse valid input', () => {
+      expect(
+        GetIndicatorsRequestSchema.safeParse({
+          isin: 'DE0007164600',
+          range: '1d',
+          indicators: [{ type: 'RSI' }],
+        }).success,
+      ).toBe(true);
+      expect(
+        GetDetailedAnalysisRequestSchema.safeParse({ isin: 'DE0007164600' })
+          .success,
+      ).toBe(true);
+
+      expect(typeof GetIndicatorsResponseSchema.shape).toBe('object');
+      expect(typeof GetDetailedAnalysisResponseSchema.shape).toBe('object');
     });
 
-    it('should export TechnicalAnalysisError', () => {
-      expect(TechnicalAnalysisError).toBeDefined();
+    it('should export IsinSchema that validates ISIN format', () => {
+      expect(IsinSchema.safeParse('DE0007164600').success).toBe(true);
+      expect(IsinSchema.safeParse('invalid').success).toBe(false);
+      expect(IsinSchema.safeParse('US0378331005').success).toBe(true);
     });
 
-    it('should export TechnicalAnalysis request schemas', () => {
-      expect(GetIndicatorsRequestSchema).toBeDefined();
-      expect(GetDetailedAnalysisRequestSchema).toBeDefined();
+    it('should export News schemas that parse valid input', () => {
+      expect(
+        GetNewsRequestSchema.safeParse({ isin: 'DE0007164600' }).success,
+      ).toBe(true);
+      expect(typeof GetNewsResponseSchema.shape).toBe('object');
     });
 
-    it('should export TechnicalAnalysis response schemas', () => {
-      expect(GetIndicatorsResponseSchema).toBeDefined();
-      expect(GetDetailedAnalysisResponseSchema).toBeDefined();
+    it('should export Sentiment schemas that parse valid input', () => {
+      expect(
+        GetSentimentRequestSchema.safeParse({ text: 'test text' }).success,
+      ).toBe(true);
+      expect(
+        GetSentimentRequestSchema.safeParse({ isin: 'DE0007164600' }).success,
+      ).toBe(true);
+      // Should fail without text or isin
+      expect(GetSentimentRequestSchema.safeParse({}).success).toBe(false);
+      expect(typeof GetSentimentResponseSchema.shape).toBe('object');
     });
 
-    it('should export SymbolMapper and related', () => {
-      expect(SymbolMapper).toBeDefined();
-      expect(SymbolMapperError).toBeDefined();
-      expect(IsinSchema).toBeDefined();
+    it('should export Fundamentals schemas that parse valid input', () => {
+      expect(
+        GetFundamentalsRequestSchema.safeParse({ isin: 'DE0007164600' })
+          .success,
+      ).toBe(true);
+      expect(typeof GetFundamentalsResponseSchema.shape).toBe('object');
     });
 
-    it('should export NewsService and related', () => {
-      expect(NewsService).toBeDefined();
-      expect(NewsServiceError).toBeDefined();
-      expect(GetNewsRequestSchema).toBeDefined();
-      expect(GetNewsResponseSchema).toBeDefined();
-    });
+    it('should export Order schemas that parse valid input', () => {
+      expect(
+        PlaceOrderRequestSchema.safeParse({
+          isin: 'DE0007164600',
+          orderType: 'buy',
+          size: 1,
+          mode: 'market',
+        }).success,
+      ).toBe(true);
+      expect(GetOrdersRequestSchema.safeParse({}).success).toBe(true);
+      expect(
+        CancelOrderRequestSchema.safeParse({ orderId: 'order-123' }).success,
+      ).toBe(true);
 
-    it('should export SentimentService and related', () => {
-      expect(SentimentService).toBeDefined();
-      expect(SentimentServiceError).toBeDefined();
-      expect(GetSentimentRequestSchema).toBeDefined();
-      expect(GetSentimentResponseSchema).toBeDefined();
-    });
-
-    it('should export FundamentalsService and related', () => {
-      expect(FundamentalsService).toBeDefined();
-      expect(FundamentalsServiceError).toBeDefined();
-      expect(GetFundamentalsRequestSchema).toBeDefined();
-      expect(GetFundamentalsResponseSchema).toBeDefined();
-    });
-
-    it('should export RiskService and related', () => {
-      expect(RiskService).toBeDefined();
-      expect(RiskServiceError).toBeDefined();
-    });
-
-    it('should export OrderService and related', () => {
-      expect(OrderService).toBeDefined();
-      expect(OrderServiceError).toBeDefined();
-      expect(PlaceOrderRequestSchema).toBeDefined();
-      expect(GetOrdersRequestSchema).toBeDefined();
-      expect(CancelOrderRequestSchema).toBeDefined();
-      expect(PlaceOrderResponseSchema).toBeDefined();
-      expect(GetOrdersResponseSchema).toBeDefined();
-      expect(CancelOrderResponseSchema).toBeDefined();
+      expect(typeof PlaceOrderResponseSchema.shape).toBe('object');
+      expect(typeof GetOrdersResponseSchema.shape).toBe('object');
+      expect(typeof CancelOrderResponseSchema.shape).toBe('object');
     });
   });
 

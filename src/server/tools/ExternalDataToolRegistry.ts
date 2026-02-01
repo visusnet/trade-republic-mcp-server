@@ -12,7 +12,7 @@ import type { NewsService } from '../services/NewsService';
 import type { SentimentService } from '../services/SentimentService';
 import type { FundamentalsService } from '../services/FundamentalsService';
 import { GetNewsRequestSchema } from '../services/NewsService.request';
-import { GetSentimentRequestSchema } from '../services/SentimentService.request';
+import { GetSentimentRequestBaseSchema } from '../services/SentimentService.request';
 import { GetFundamentalsRequestSchema } from '../services/FundamentalsService.request';
 import { ToolRegistry } from './ToolRegistry';
 
@@ -44,7 +44,7 @@ export class ExternalDataToolRegistry extends ToolRegistry {
         title: 'Get Sentiment',
         description:
           'Analyze sentiment for text or news articles. Provide text for direct analysis or ISIN to analyze recent news. Returns sentiment score, direction (positive/negative/neutral), and confidence. No authentication required.',
-        inputSchema: GetSentimentRequestSchema._def.schema.shape,
+        inputSchema: GetSentimentRequestBaseSchema.shape,
       },
       this.sentimentService.getSentiment.bind(this.sentimentService),
     );
