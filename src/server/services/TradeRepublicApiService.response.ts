@@ -16,19 +16,6 @@ export const LoginResponseSchema = z.object({
 export type LoginResponse = z.output<typeof LoginResponseSchema>;
 
 /**
- * Token response schema
- * Returned after successful 2FA verification
- */
-export const TokenResponseSchema = z.object({
-  /** Refresh token for obtaining new session tokens */
-  refreshToken: z.string(),
-  /** Session token for WebSocket authentication */
-  sessionToken: z.string(),
-});
-
-export type TokenResponse = z.output<typeof TokenResponseSchema>;
-
-/**
  * Error response schema
  * Returned when API request fails
  */
@@ -42,14 +29,3 @@ export const ErrorResponseSchema = z.object({
 });
 
 export type ErrorResponse = z.output<typeof ErrorResponseSchema>;
-
-/**
- * Refresh token response schema
- * Returned when refreshing session token
- */
-export const RefreshTokenResponseSchema = z.object({
-  /** New session token */
-  sessionToken: z.string(),
-});
-
-export type RefreshTokenResponse = z.output<typeof RefreshTokenResponseSchema>;

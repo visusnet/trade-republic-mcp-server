@@ -7,8 +7,8 @@ import {
   ConnectionStatus,
   MESSAGE_CODE,
   type WebSocket,
-  type WebSocketFactory,
   type WebSocketMessage,
+  type WebSocketOptions,
 } from './TradeRepublicApiService.types';
 
 const logger = mockLogger();
@@ -63,18 +63,23 @@ function createMockWebSocket(): MockWebSocket {
 
 describe('WebSocketManager', () => {
   let mockWs: MockWebSocket;
-  let mockWsFactory: WebSocketFactory;
+  let mockWsFactory: jest.Mock<
+    (url: string, options?: WebSocketOptions) => WebSocket
+  >;
   let wsManager: WebSocketManager;
 
   beforeEach(() => {
     mockWs = createMockWebSocket();
-    mockWsFactory = jest.fn(() => mockWs as unknown as WebSocket);
+    mockWsFactory = jest.fn(
+      (_url: string, _options?: WebSocketOptions) =>
+        mockWs as unknown as WebSocket,
+    );
     wsManager = new WebSocketManager(mockWsFactory);
   });
 
   describe('connect', () => {
     it('should establish a WebSocket connection', async () => {
-      const connectPromise = wsManager.connect('test-session-token');
+      const connectPromise = wsManager.connect('session=test-cookie');
 
       // Simulate connection open
       mockWs.setReadyState(mockWs.OPEN);
@@ -86,9 +91,36 @@ describe('WebSocketManager', () => {
       expect(wsManager.getStatus()).toBe(ConnectionStatus.CONNECTED);
     });
 
-    it('should send connection message with session token', async () => {
-      const sessionToken = 'test-session-token';
-      const connectPromise = wsManager.connect(sessionToken);
+    it('should pass cookie header to WebSocket factory', async () => {
+      const cookieHeader = 'session=test-cookie; other=value';
+      const connectPromise = wsManager.connect(cookieHeader);
+
+      mockWs.setReadyState(mockWs.OPEN);
+      mockWs.emit('open');
+
+      await connectPromise;
+
+      expect(mockWsFactory).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          headers: { Cookie: cookieHeader },
+        }),
+      );
+    });
+
+    it('should pass empty options when cookie header is empty', async () => {
+      const connectPromise = wsManager.connect('');
+
+      mockWs.setReadyState(mockWs.OPEN);
+      mockWs.emit('open');
+
+      await connectPromise;
+
+      expect(mockWsFactory).toHaveBeenCalledWith(expect.any(String), {});
+    });
+
+    it('should send connection message without sessionToken', async () => {
+      const connectPromise = wsManager.connect('session=test-cookie');
 
       mockWs.setReadyState(mockWs.OPEN);
       mockWs.emit('open');
@@ -98,9 +130,13 @@ describe('WebSocketManager', () => {
       expect(mockWs.send).toHaveBeenCalledWith(
         expect.stringContaining('connect 31'),
       );
-      expect(mockWs.send).toHaveBeenCalledWith(
-        expect.stringContaining(sessionToken),
-      );
+      // Verify sessionToken is NOT in the connect message
+      const sendCalls = (mockWs.send as jest.Mock).mock.calls as string[][];
+      const connectMessage = sendCalls
+        .map((call) => call[0])
+        .find((msg) => msg.includes('connect 31'));
+      expect(connectMessage).toBeDefined();
+      expect(connectMessage).not.toContain('sessionToken');
     });
 
     it('should reject if connection fails', async () => {

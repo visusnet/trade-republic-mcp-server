@@ -18,26 +18,22 @@ import {
 import {
   ErrorResponseSchema,
   LoginResponseSchema,
-  RefreshTokenResponseSchema,
-  TokenResponseSchema,
 } from './TradeRepublicApiService.response';
 import {
   AuthenticationError,
   AuthStatus,
+  DEFAULT_SESSION_DURATION_MS,
   TR_API_URL,
   TradeRepublicError,
   type FetchFunction,
   type KeyPair,
-  type SessionTokens,
+  type StoredCookie,
   type WebSocketMessage,
 } from './TradeRepublicApiService.types';
 import type { WebSocketManager } from './TradeRepublicApiService.websocket';
 
-/** Session token expiration buffer (5 minutes before actual expiration) */
-const SESSION_EXPIRATION_BUFFER_MS = 5 * 60 * 1000;
-
-/** Default session duration (55 minutes) */
-const DEFAULT_SESSION_DURATION_MS = 55 * 60 * 1000;
+/** Session expiration buffer (30 seconds before actual expiration) */
+const SESSION_EXPIRATION_BUFFER_MS = 30 * 1000;
 
 /**
  * TradeRepublicApiService provides the main interface for interacting with
@@ -55,7 +51,8 @@ export class TradeRepublicApiService {
   private keyPair: KeyPair | null = null;
   private authStatus: AuthStatus = AuthStatus.UNAUTHENTICATED;
   private processId: string | null = null;
-  private sessionTokens: SessionTokens | null = null;
+  private cookies: StoredCookie[] = [];
+  private sessionExpiresAt: number = 0;
   private messageHandlers: ((message: WebSocketMessage) => void)[] = [];
   private errorHandlers: ((error: Error | WebSocketMessage) => void)[] = [];
   private initialized = false;
@@ -204,42 +201,43 @@ export class TradeRepublicApiService {
       throw new AuthenticationError(message, `HTTP_${response.status}`);
     }
 
-    const data = await response.json();
-    const parsed = TokenResponseSchema.parse(data);
+    // Parse cookies from Set-Cookie headers (cookie-based auth per pytr)
+    this.cookies = this.parseCookiesFromResponse(response);
+    if (this.cookies.length === 0) {
+      throw new AuthenticationError('No cookies received from 2FA response');
+    }
 
-    this.sessionTokens = {
-      refreshToken: parsed.refreshToken,
-      sessionToken: parsed.sessionToken,
-      expiresAt: Date.now() + DEFAULT_SESSION_DURATION_MS,
-    };
+    // Session expiry: 290 seconds per pytr
+    this.sessionExpiresAt = Date.now() + DEFAULT_SESSION_DURATION_MS;
 
     this.authStatus = AuthStatus.AUTHENTICATED;
 
     logger.api.info('2FA verified, connecting to WebSocket');
 
-    // Connect WebSocket with session token
-    await this.ws.connect(this.sessionTokens.sessionToken);
+    // Connect WebSocket with cookies as header
+    const cookieHeader = this.getCookieHeader();
+    await this.ws.connect(cookieHeader);
 
     logger.api.info('Authentication complete');
   }
 
   /**
-   * Refreshes the session token using the refresh token.
+   * Refreshes the session using cookies.
+   * Per pytr: uses GET request with cookies, refreshes cookies from response.
    */
   public async refreshSession(): Promise<void> {
     this.ensureInitialized();
 
-    if (this.authStatus !== AuthStatus.AUTHENTICATED || !this.sessionTokens) {
+    if (this.authStatus !== AuthStatus.AUTHENTICATED || !this.hasCookies()) {
       throw new AuthenticationError('Not authenticated');
     }
 
-    logger.api.info('Refreshing session token');
+    logger.api.info('Refreshing session');
 
     const response = await this.fetchFn(`${TR_API_URL}/auth/web/session`, {
-      method: 'POST',
+      method: 'GET',
       headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.sessionTokens.refreshToken}`,
+        Cookie: this.getCookieHeader(),
       },
     });
 
@@ -254,16 +252,16 @@ export class TradeRepublicApiService {
       throw new AuthenticationError(message, `HTTP_${response.status}`);
     }
 
-    const data = await response.json();
-    const parsed = RefreshTokenResponseSchema.parse(data);
+    // Update cookies from response if new ones are provided
+    const newCookies = this.parseCookiesFromResponse(response);
+    if (newCookies.length > 0) {
+      this.cookies = newCookies;
+    }
 
-    this.sessionTokens = {
-      ...this.sessionTokens,
-      sessionToken: parsed.sessionToken,
-      expiresAt: Date.now() + DEFAULT_SESSION_DURATION_MS,
-    };
+    // Reset session expiry
+    this.sessionExpiresAt = Date.now() + DEFAULT_SESSION_DURATION_MS;
 
-    logger.api.info('Session token refreshed');
+    logger.api.info('Session refreshed');
   }
 
   /**
@@ -272,15 +270,12 @@ export class TradeRepublicApiService {
   public async ensureValidSession(): Promise<void> {
     this.ensureInitialized();
 
-    if (this.authStatus !== AuthStatus.AUTHENTICATED || !this.sessionTokens) {
+    if (this.authStatus !== AuthStatus.AUTHENTICATED || !this.hasCookies()) {
       throw new AuthenticationError('Not authenticated');
     }
 
     // Check if session is about to expire
-    if (
-      Date.now() >=
-      this.sessionTokens.expiresAt - SESSION_EXPIRATION_BUFFER_MS
-    ) {
+    if (Date.now() >= this.sessionExpiresAt - SESSION_EXPIRATION_BUFFER_MS) {
       await this.refreshSession();
     }
   }
@@ -323,7 +318,8 @@ export class TradeRepublicApiService {
     logger.api.info('Disconnecting from Trade Republic API');
     this.ws.disconnect();
     this.authStatus = AuthStatus.UNAUTHENTICATED;
-    this.sessionTokens = null;
+    this.cookies = [];
+    this.sessionExpiresAt = 0;
     this.processId = null;
   }
 
@@ -370,5 +366,105 @@ export class TradeRepublicApiService {
         'Service not initialized. Call initialize() first.',
       );
     }
+  }
+
+  /**
+   * Checks if cookies are available.
+   */
+  private hasCookies(): boolean {
+    return this.cookies.length > 0;
+  }
+
+  /**
+   * Gets the cookie header string for HTTP requests.
+   * Only includes cookies for traderepublic.com domain.
+   */
+  private getCookieHeader(): string {
+    return this.cookies
+      .filter((c) => c.domain.endsWith('traderepublic.com'))
+      .map((c) => `${c.name}=${c.value}`)
+      .join('; ');
+  }
+
+  /**
+   * Parses Set-Cookie headers from a fetch Response.
+   * Returns an array of StoredCookie objects.
+   */
+  private parseCookiesFromResponse(response: Response): StoredCookie[] {
+    const cookies: StoredCookie[] = [];
+
+    // Headers may be undefined in mocked responses during testing
+    const headers = response.headers as Headers | undefined;
+    if (!headers) {
+      return cookies;
+    }
+
+    let setCookieHeaders: string[] = [];
+
+    // Try getSetCookie() first (available in newer Node.js versions)
+    if (typeof headers.getSetCookie === 'function') {
+      setCookieHeaders = headers.getSetCookie();
+    } else if (typeof headers.get === 'function') {
+      // Fallback: get 'set-cookie' header (may be comma-separated)
+      const setCookieHeader = headers.get('set-cookie');
+      if (setCookieHeader) {
+        // Simple split - this may not work for cookies with commas in values,
+        // but Trade Republic cookies are simple key=value pairs
+        setCookieHeaders = setCookieHeader.split(/,(?=\s*\w+=)/);
+      }
+    }
+
+    for (const cookieStr of setCookieHeaders) {
+      const parsed = this.parseSingleCookie(cookieStr);
+      if (parsed) {
+        cookies.push(parsed);
+      }
+    }
+
+    return cookies;
+  }
+
+  /**
+   * Parses a single Set-Cookie header string.
+   */
+  private parseSingleCookie(cookieStr: string): StoredCookie | null {
+    const parts = cookieStr.split(';').map((p) => p.trim());
+
+    // First part is name=value
+    const [nameValue, ...attributes] = parts;
+    const eqIndex = nameValue.indexOf('=');
+    if (eqIndex === -1) {
+      return null;
+    }
+
+    const name = nameValue.substring(0, eqIndex).trim();
+    const value = nameValue.substring(eqIndex + 1).trim();
+
+    if (!name) {
+      return null;
+    }
+
+    // Parse attributes
+    let domain = 'traderepublic.com'; // Default domain
+    let path = '/';
+    let expires: Date | undefined;
+
+    for (const attr of attributes) {
+      const [attrName, attrValue] = attr.split('=').map((s) => s.trim());
+      const attrNameLower = attrName.toLowerCase();
+
+      if (attrNameLower === 'domain' && attrValue) {
+        domain = attrValue.startsWith('.') ? attrValue.substring(1) : attrValue;
+      } else if (attrNameLower === 'path' && attrValue) {
+        path = attrValue;
+      } else if (attrNameLower === 'expires' && attrValue) {
+        const parsedDate = new Date(attrValue);
+        if (!isNaN(parsedDate.getTime())) {
+          expires = parsedDate;
+        }
+      }
+    }
+
+    return { name, value, domain, path, expires };
   }
 }

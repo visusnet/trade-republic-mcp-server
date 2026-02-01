@@ -2599,6 +2599,24 @@ const cookies = setCookieParser.parse(response.headers.get('set-cookie') || '');
 const sessionCookie = cookies.find(c => c.name === 'tr_session');
 ```
 
+**RESOLVED (2026-02-02):**
+Based on analysis of pytr's complete source code, implemented cookie-based web authentication:
+
+1. **2FA completion** now captures cookies from `Set-Cookie` header instead of parsing JSON body
+2. **WebSocket connection** authenticates via `Cookie` HTTP header passed during WebSocket handshake
+3. **Connect message** no longer includes `sessionToken` - authentication is done via cookies
+4. **Session refresh** uses `GET /api/v1/auth/web/session` with cookies, not POST with Bearer token
+5. **Session duration** changed from 55 minutes to 290 seconds (~5 min) per pytr
+
+Implementation details:
+- Added `StoredCookie` interface and cookie parsing utilities
+- Modified `verify2FA()` to capture cookies from response headers
+- Modified `WebSocketManager.connect()` to accept cookies and pass them as `Cookie` header
+- Modified `refreshSession()` to use GET with cookies
+- Updated `DEFAULT_SESSION_DURATION_MS` to 290,000 ms (290 seconds)
+- Removed unused `TokenResponseSchema` and `RefreshTokenResponseSchema`
+- All tests updated and passing with 100% coverage
+
 ---
 
 ## Verification Status

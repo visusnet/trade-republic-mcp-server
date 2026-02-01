@@ -107,7 +107,7 @@ export interface Credentials {
   pin: string;
 }
 
-/** Session tokens */
+/** Session tokens (deprecated - kept for compatibility) */
 export interface SessionTokens {
   /** Refresh token for obtaining new session tokens */
   refreshToken: string;
@@ -116,6 +116,23 @@ export interface SessionTokens {
   /** Token expiration timestamp (milliseconds) */
   expiresAt: number;
 }
+
+/** Stored cookie from Set-Cookie header */
+export interface StoredCookie {
+  /** Cookie name */
+  name: string;
+  /** Cookie value */
+  value: string;
+  /** Cookie domain */
+  domain: string;
+  /** Cookie path */
+  path: string;
+  /** Cookie expiration date */
+  expires?: Date;
+}
+
+/** Default session duration (290 seconds per pytr) */
+export const DEFAULT_SESSION_DURATION_MS = 290_000;
 
 /** Parsed WebSocket message */
 export interface WebSocketMessage {
@@ -137,8 +154,17 @@ export interface SignedPayload {
   signature: string;
 }
 
+/** WebSocket connection options */
+export interface WebSocketOptions {
+  /** HTTP headers to send with WebSocket handshake */
+  headers?: Record<string, string>;
+}
+
 /** WebSocket factory function type */
-export type WebSocketFactory = (url: string) => WebSocket;
+export type WebSocketFactory = (
+  url: string,
+  options?: WebSocketOptions,
+) => WebSocket;
 
 /** WebSocket interface for dependency injection */
 export interface WebSocket {

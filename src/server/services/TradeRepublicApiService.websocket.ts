@@ -16,6 +16,7 @@ import {
   type WebSocket,
   type WebSocketFactory,
   type WebSocketMessage,
+  type WebSocketOptions,
 } from './TradeRepublicApiService.types';
 
 /**
@@ -36,9 +37,10 @@ export class WebSocketManager extends EventEmitter {
   }
 
   /**
-   * Establishes a WebSocket connection with the given session token.
+   * Establishes a WebSocket connection with cookie-based authentication.
+   * The cookies are passed as HTTP headers during the WebSocket handshake.
    */
-  public async connect(sessionToken: string): Promise<void> {
+  public async connect(cookieHeader: string): Promise<void> {
     if (this.status !== ConnectionStatus.DISCONNECTED) {
       throw new WebSocketError('Already connected or connecting');
     }
@@ -57,12 +59,15 @@ export class WebSocketManager extends EventEmitter {
       };
 
       try {
-        this.ws = this.wsFactory(TR_WS_URL);
+        const options: WebSocketOptions = cookieHeader
+          ? { headers: { Cookie: cookieHeader } }
+          : {};
+        this.ws = this.wsFactory(TR_WS_URL, options);
 
         this.ws.on('open', () => {
           this.status = ConnectionStatus.CONNECTED;
           logger.api.info('WebSocket connected');
-          this.sendConnectMessage(sessionToken);
+          this.sendConnectMessage();
           settle(() => {
             resolve();
           });
@@ -164,16 +169,16 @@ export class WebSocketManager extends EventEmitter {
   }
 
   /**
-   * Sends the initial connection message with session token.
+   * Sends the initial connection message.
+   * Note: Authentication is done via Cookie header, not sessionToken in payload.
    */
-  private sendConnectMessage(sessionToken: string): void {
+  private sendConnectMessage(): void {
     const connectPayload = {
       locale: 'en',
       platformId: 'webtrading',
       platformVersion: 'chrome - 120.0.0',
       clientId: 'app.traderepublic.com',
       clientVersion: '1.0.0',
-      sessionToken,
     };
     const message = `connect 31 ${JSON.stringify(connectPayload)}`;
     logger.api.debug(`Sending connect message`);

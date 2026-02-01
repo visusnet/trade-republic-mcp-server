@@ -103,6 +103,44 @@ function createMockFetch(): jest.MockedFunction<FetchFunction> {
   return jest.fn<FetchFunction>();
 }
 
+/**
+ * Creates a mock Response with Set-Cookie headers for cookie-based auth.
+ */
+function createMock2FAResponse(
+  cookies: string[] = ['session=test-session-cookie; Domain=traderepublic.com'],
+): Partial<Response> {
+  const headers = new Map<string, string>();
+  if (cookies.length > 0) {
+    headers.set('set-cookie', cookies.join(', '));
+  }
+  return {
+    ok: true,
+    headers: {
+      get: (name: string) => headers.get(name.toLowerCase()) ?? null,
+      getSetCookie: () => cookies,
+    } as unknown as Headers,
+    json: () => Promise.resolve({}),
+  };
+}
+
+/**
+ * Creates a mock Response for refresh session with optional new cookies.
+ */
+function createMockRefreshResponse(cookies: string[] = []): Partial<Response> {
+  const headers = new Map<string, string>();
+  if (cookies.length > 0) {
+    headers.set('set-cookie', cookies.join(', '));
+  }
+  return {
+    ok: true,
+    headers: {
+      get: (name: string) => headers.get(name.toLowerCase()) ?? null,
+      getSetCookie: () => cookies,
+    } as unknown as Headers,
+    json: () => Promise.resolve({}),
+  };
+}
+
 describe('TradeRepublicApiService', () => {
   let mockCrypto: jest.Mocked<CryptoManager>;
   let mockWs: jest.Mocked<WebSocketManager> & EventEmitter;
@@ -270,15 +308,10 @@ describe('TradeRepublicApiService', () => {
       await service.login(testCredentials);
     });
 
-    it('should complete 2FA and receive tokens', async () => {
-      const mockResponse = {
-        ok: true,
-        json: () =>
-          Promise.resolve({
-            refreshToken: 'test-refresh-token',
-            sessionToken: 'test-session-token',
-          }),
-      };
+    it('should complete 2FA and store cookies', async () => {
+      const mockResponse = createMock2FAResponse([
+        'session=test-session-cookie; Domain=traderepublic.com; Path=/',
+      ]);
       mockFetch.mockResolvedValue(mockResponse as Response);
 
       await service.verify2FA(testTwoFactorCode);
@@ -286,20 +319,127 @@ describe('TradeRepublicApiService', () => {
       expect(service.getAuthStatus()).toBe(AuthStatus.AUTHENTICATED);
     });
 
-    it('should connect WebSocket after successful 2FA', async () => {
+    it('should connect WebSocket with cookie header after successful 2FA', async () => {
+      const mockResponse = createMock2FAResponse([
+        'session=test-session-cookie; Domain=traderepublic.com; Path=/',
+      ]);
+      mockFetch.mockResolvedValue(mockResponse as Response);
+
+      await service.verify2FA(testTwoFactorCode);
+
+      // WebSocket should receive cookie header string, not session token
+      expect(mockWs.connect).toHaveBeenCalledWith(
+        'session=test-session-cookie',
+      );
+    });
+
+    it('should throw if no cookies received in 2FA response', async () => {
+      const mockResponse = createMock2FAResponse([]);
+      mockFetch.mockResolvedValue(mockResponse as Response);
+
+      await expect(service.verify2FA(testTwoFactorCode)).rejects.toThrow(
+        'No cookies received from 2FA response',
+      );
+    });
+
+    it('should handle response with no headers', async () => {
       const mockResponse = {
         ok: true,
-        json: () =>
-          Promise.resolve({
-            refreshToken: 'test-refresh-token',
-            sessionToken: 'test-session-token',
-          }),
+        headers: undefined,
+        json: () => Promise.resolve({}),
+      };
+      mockFetch.mockResolvedValue(mockResponse as unknown as Response);
+
+      await expect(service.verify2FA(testTwoFactorCode)).rejects.toThrow(
+        'No cookies received from 2FA response',
+      );
+    });
+
+    it('should parse cookies using headers.get fallback', async () => {
+      // Mock response without getSetCookie, only get method
+      const mockResponse = {
+        ok: true,
+        headers: {
+          get: (name: string) =>
+            name.toLowerCase() === 'set-cookie'
+              ? 'session=fallback-cookie; Domain=traderepublic.com'
+              : null,
+          // No getSetCookie function
+        },
+        json: () => Promise.resolve({}),
       };
       mockFetch.mockResolvedValue(mockResponse as Response);
 
       await service.verify2FA(testTwoFactorCode);
 
-      expect(mockWs.connect).toHaveBeenCalledWith('test-session-token');
+      expect(mockWs.connect).toHaveBeenCalledWith('session=fallback-cookie');
+    });
+
+    it('should parse multiple cookies from comma-separated set-cookie header', async () => {
+      const mockResponse = {
+        ok: true,
+        headers: {
+          get: (name: string) =>
+            name.toLowerCase() === 'set-cookie'
+              ? 'session=cookie1; Domain=traderepublic.com, refresh=cookie2; Domain=traderepublic.com'
+              : null,
+        },
+        json: () => Promise.resolve({}),
+      };
+      mockFetch.mockResolvedValue(mockResponse as Response);
+
+      await service.verify2FA(testTwoFactorCode);
+
+      expect(mockWs.connect).toHaveBeenCalledWith(
+        'session=cookie1; refresh=cookie2',
+      );
+    });
+
+    it('should ignore malformed cookies (no equals sign)', async () => {
+      const mockResponse = createMock2FAResponse([
+        'malformed-cookie-without-equals',
+        'session=valid-cookie; Domain=traderepublic.com',
+      ]);
+      mockFetch.mockResolvedValue(mockResponse as Response);
+
+      await service.verify2FA(testTwoFactorCode);
+
+      expect(mockWs.connect).toHaveBeenCalledWith('session=valid-cookie');
+    });
+
+    it('should ignore cookies with empty name', async () => {
+      const mockResponse = createMock2FAResponse([
+        '=empty-name; Domain=traderepublic.com',
+        'session=valid-cookie; Domain=traderepublic.com',
+      ]);
+      mockFetch.mockResolvedValue(mockResponse as Response);
+
+      await service.verify2FA(testTwoFactorCode);
+
+      expect(mockWs.connect).toHaveBeenCalledWith('session=valid-cookie');
+    });
+
+    it('should parse cookie with expires attribute', async () => {
+      const expiresDate = 'Wed, 21 Oct 2025 07:28:00 GMT';
+      const mockResponse = createMock2FAResponse([
+        `session=test-cookie; Domain=traderepublic.com; Expires=${expiresDate}`,
+      ]);
+      mockFetch.mockResolvedValue(mockResponse as Response);
+
+      await service.verify2FA(testTwoFactorCode);
+
+      expect(service.getAuthStatus()).toBe(AuthStatus.AUTHENTICATED);
+    });
+
+    it('should handle cookie with leading dot in domain', async () => {
+      const mockResponse = createMock2FAResponse([
+        'session=test-cookie; Domain=.traderepublic.com',
+      ]);
+      mockFetch.mockResolvedValue(mockResponse as Response);
+
+      await service.verify2FA(testTwoFactorCode);
+
+      expect(mockWs.connect).toHaveBeenCalledWith('session=test-cookie');
     });
 
     it('should throw on invalid 2FA code format', async () => {
@@ -383,27 +523,18 @@ describe('TradeRepublicApiService', () => {
       };
       mockFetch.mockResolvedValue(mockLoginResponse as Response);
       await service.login(testCredentials);
-      // 2FA
-      const mock2FAResponse = {
-        ok: true,
-        json: () =>
-          Promise.resolve({
-            refreshToken: 'test-refresh-token',
-            sessionToken: 'test-session-token',
-          }),
-      };
+      // 2FA with cookies
+      const mock2FAResponse = createMock2FAResponse([
+        'session=test-session-cookie; Domain=traderepublic.com; Path=/',
+      ]);
       mockFetch.mockResolvedValue(mock2FAResponse as Response);
       await service.verify2FA(testTwoFactorCode);
     });
 
-    it('should refresh session token', async () => {
-      const mockRefreshResponse = {
-        ok: true,
-        json: () =>
-          Promise.resolve({
-            sessionToken: 'new-session-token',
-          }),
-      };
+    it('should refresh session using GET with cookies', async () => {
+      const mockRefreshResponse = createMockRefreshResponse([
+        'session=new-session-cookie; Domain=traderepublic.com; Path=/',
+      ]);
       mockFetch.mockResolvedValue(mockRefreshResponse as Response);
 
       await service.refreshSession();
@@ -411,7 +542,34 @@ describe('TradeRepublicApiService', () => {
       expect(mockFetch).toHaveBeenCalledWith(
         expect.stringContaining('/api/v1/auth/web/session'),
         expect.objectContaining({
-          method: 'POST',
+          method: 'GET',
+          headers: expect.objectContaining({
+            Cookie: 'session=test-session-cookie',
+          }),
+        }),
+      );
+    });
+
+    it('should update cookies from refresh response if provided', async () => {
+      const mockRefreshResponse = createMockRefreshResponse([
+        'session=refreshed-session-cookie; Domain=traderepublic.com; Path=/',
+      ]);
+      mockFetch.mockResolvedValue(mockRefreshResponse as Response);
+
+      await service.refreshSession();
+
+      // Clear mock and refresh again to verify new cookie is used
+      mockFetch.mockClear();
+      mockFetch.mockResolvedValue(createMockRefreshResponse() as Response);
+
+      await service.refreshSession();
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/api/v1/auth/web/session'),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Cookie: 'session=refreshed-session-cookie',
+          }),
         }),
       );
     });
@@ -487,27 +645,16 @@ describe('TradeRepublicApiService', () => {
       };
       mockFetch.mockResolvedValue(mockLoginResponse as Response);
       await service.login(testCredentials);
-      const mock2FAResponse = {
-        ok: true,
-        json: () =>
-          Promise.resolve({
-            refreshToken: 'test-refresh-token',
-            sessionToken: 'test-session-token',
-          }),
-      };
+      const mock2FAResponse = createMock2FAResponse([
+        'session=test-session-cookie; Domain=traderepublic.com; Path=/',
+      ]);
       mockFetch.mockResolvedValue(mock2FAResponse as Response);
       await service.verify2FA(testTwoFactorCode);
     });
 
     it('should refresh if session is about to expire', async () => {
       // Force session to be expired by manipulating time
-      const mockRefreshResponse = {
-        ok: true,
-        json: () =>
-          Promise.resolve({
-            sessionToken: 'new-session-token',
-          }),
-      };
+      const mockRefreshResponse = createMockRefreshResponse();
       mockFetch.mockResolvedValue(mockRefreshResponse as Response);
 
       // Mock Date.now to return a time past expiration
@@ -557,14 +704,9 @@ describe('TradeRepublicApiService', () => {
       };
       mockFetch.mockResolvedValue(mockLoginResponse as Response);
       await service.login(testCredentials);
-      const mock2FAResponse = {
-        ok: true,
-        json: () =>
-          Promise.resolve({
-            refreshToken: 'test-refresh-token',
-            sessionToken: 'test-session-token',
-          }),
-      };
+      const mock2FAResponse = createMock2FAResponse([
+        'session=test-session-cookie; Domain=traderepublic.com; Path=/',
+      ]);
       mockFetch.mockResolvedValue(mock2FAResponse as Response);
       await service.verify2FA(testTwoFactorCode);
     });
@@ -585,14 +727,9 @@ describe('TradeRepublicApiService', () => {
       };
       mockFetch.mockResolvedValue(mockLoginResponse as Response);
       await service.login(testCredentials);
-      const mock2FAResponse = {
-        ok: true,
-        json: () =>
-          Promise.resolve({
-            refreshToken: 'test-refresh-token',
-            sessionToken: 'test-session-token',
-          }),
-      };
+      const mock2FAResponse = createMock2FAResponse([
+        'session=test-session-cookie; Domain=traderepublic.com; Path=/',
+      ]);
       mockFetch.mockResolvedValue(mock2FAResponse as Response);
       await service.verify2FA(testTwoFactorCode);
     });
@@ -636,14 +773,9 @@ describe('TradeRepublicApiService', () => {
       };
       mockFetch.mockResolvedValue(mockLoginResponse as Response);
       await service.login(testCredentials);
-      const mock2FAResponse = {
-        ok: true,
-        json: () =>
-          Promise.resolve({
-            refreshToken: 'test-refresh-token',
-            sessionToken: 'test-session-token',
-          }),
-      };
+      const mock2FAResponse = createMock2FAResponse([
+        'session=test-session-cookie; Domain=traderepublic.com; Path=/',
+      ]);
       mockFetch.mockResolvedValue(mock2FAResponse as Response);
       await service.verify2FA(testTwoFactorCode);
 
