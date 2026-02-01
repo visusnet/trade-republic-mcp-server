@@ -1,6 +1,6 @@
 ---
 description: Trading strategy rules
-globs: ["**/*skill*", "**/*trading*"]
+globs: [".claude/*", "**/*skill*", "**/*trading*"]
 ---
 
 ## Claude is the Decision Engine

@@ -35,10 +35,13 @@ Implement place_order, get_orders, modify_order, cancel_order tools for trade ex
 ### Task 11: Claude Skill
 Create the trade-republic-trading skill with SKILL.md, strategies.md, indicators.md, state-schema.md, and main trading loop.
 
-### Task 12: Integration Testing
+### Task 12: Design Decision Validation
+For every ADR and major implementation decision, start at least two sub agents to independently verify whether the software has been implemented according to the documented decisions. Fix any discrepancies found in sub agents.
+
+### Task 13: Integration Testing
 End-to-end testing of the complete system with mocked Trade Republic API.
 
-### Task 13: Documentation
+### Task 14: Documentation
 README, usage guide, and any remaining ADRs.
 
 ---
@@ -57,6 +60,7 @@ README, usage guide, and any remaining ADRs.
 | 08 | completed | done | done | done |
 | 09 | completed | done | done | done |
 | 10 | completed | done | done | done |
-| 11 | pending | - | - | - |
+| 11 | completed | done | done | done |
 | 12 | pending | - | - | - |
 | 13 | pending | - | - | - |
+| 14 | pending | - | - | - |
