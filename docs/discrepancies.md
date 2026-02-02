@@ -2353,7 +2353,7 @@ def decode_updates(self, key, payload):
 
 **Source:** Task 13 (pytr, Trade_Republic_Connector)
 
-**Severity:** CRITICAL
+**Severity:** ~~CRITICAL~~ RESOLVED
 
 **ADR/Topic:** Trade Republic API - Authentication
 
@@ -2362,7 +2362,7 @@ def decode_updates(self, key, payload):
 - [Trade_Republic_Connector Comparison](./api-comparison-trade-republic-connector.md)
 
 **Description:**
-Both pytr and Trade_Republic_Connector use 290 seconds (~5 min) session duration. We hardcode 55 minutes.
+Both pytr and Trade_Republic_Connector use 290 seconds (~5 min) session duration. We previously hardcoded 55 minutes.
 
 **pytr (api.py line 230):**
 ```python
@@ -2375,18 +2375,15 @@ self._session_token_expires_at = time.time() + 290
 // Refresh triggers at 30-second threshold
 ```
 
-**Our Implementation:**
+**Our Implementation (after fix):**
 ```typescript
-const DEFAULT_SESSION_DURATION_MS = 55 * 60 * 1000; // 55 minutes
+/** Default session duration (290 seconds per pytr) */
+export const DEFAULT_SESSION_DURATION_MS = 290_000;
 ```
 
-**Impact:**
-May cause authentication failures if sessions actually expire after 5 minutes instead of 55 minutes.
+**RESOLVED (2026-02-02):** Fixed as part of DISCREPANCY-024 (cookie-based authentication).
 
-**Fix Required:**
-1. Test with live API to determine actual expiration
-2. Update `DEFAULT_SESSION_DURATION_MS` (likely to 290000 ms = 290 seconds)
-3. Consider using server-provided `expiresIn` from token response
+Session duration changed from 55 minutes to 290 seconds (290,000 ms) to match pytr and Trade_Republic_Connector. See `TradeRepublicApiService.types.ts` line 135.
 
 ---
 
@@ -2806,12 +2803,9 @@ After all agents complete, fix discrepancies in this order:
    - ~~Change field name from `isin` to `id` in ticker/history subscriptions~~
    - Our implementation already uses `id: "ISIN.EXCHANGE"` format - matches pytr exactly
 
-4. **DISCREPANCY-019 (TR API - pytr + TR_Connector):** Investigate session duration
-   - Both pytr and Trade_Republic_Connector use 290 second (~5 min) sessions
-   - We hardcode 55 minute duration
-   - Test with live API to determine actual expiration
-   - Update DEFAULT_SESSION_DURATION_MS if needed (likely to 290000 ms)
-   - Consider using server-provided expiresIn from token response
+4. ~~**DISCREPANCY-019 (TR API - pytr + TR_Connector):** Investigate session duration~~ **RESOLVED (2026-02-02)**
+   - ~~Both pytr and Trade_Republic_Connector use 290 second (~5 min) sessions~~
+   - Fixed as part of DISCREPANCY-024: `DEFAULT_SESSION_DURATION_MS` changed to 290,000 ms
 
 5. **DISCREPANCY-024 (TR API - trade-republic-api):** Verify authentication token delivery
    - Both pytr and trade-republic-api extract tokens from `Set-Cookie` header
