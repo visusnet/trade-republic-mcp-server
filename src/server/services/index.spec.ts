@@ -364,10 +364,12 @@ describe('Services Index', () => {
   });
 
   describe('defaultWebSocketFactory', () => {
-    it('should create a WebSocket instance', () => {
-      // Since undici is mocked, this just verifies the function is callable
+    it('should create a WebSocket with expected interface', () => {
       const ws = defaultWebSocketFactory('wss://test.com');
-      expect(ws).toBeDefined();
+      expect(typeof ws.addEventListener).toBe('function');
+      expect(typeof ws.removeEventListener).toBe('function');
+      expect(typeof ws.send).toBe('function');
+      expect(typeof ws.close).toBe('function');
     });
 
     it('should pass headers to WebSocket when provided', () => {

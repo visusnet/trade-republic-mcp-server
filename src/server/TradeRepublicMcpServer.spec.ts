@@ -70,14 +70,17 @@ describe('TradeRepublicMcpServer', () => {
   });
 
   describe('Server Methods', () => {
-    it('should return express app', () => {
+    it('should return express app with expected interface', () => {
       const app = server.getExpressApp();
-      expect(app).toBeDefined();
+      expect(typeof app.listen).toBe('function');
+      expect(typeof app.use).toBe('function');
+      expect(typeof app.get).toBe('function');
     });
 
-    it('should return MCP server instance', () => {
+    it('should return MCP server instance with expected interface', () => {
       const mcpServer = server.getMcpServer();
-      expect(mcpServer).toBeDefined();
+      expect(typeof mcpServer.registerTool).toBe('function');
+      expect(typeof mcpServer.connect).toBe('function');
     });
   });
 

@@ -2106,7 +2106,9 @@ ADR-014 states "Services have no direct dependencies on each other" but two viol
 
 ---
 
-### DISCREPANCY-015: ADR-017 Trivial Tests with Only toBeDefined()
+### DISCREPANCY-015: ADR-017 Trivial Tests with Only toBeDefined() [RESOLVED]
+
+**Status:** RESOLVED (2026-02-02) - Fixed all 4 trivial tests with behavioral assertions
 
 **ADR Reference:** ADR-017: Testing Rules - No Trivial Tests
 
@@ -2885,7 +2887,10 @@ After all agents complete, fix discrepancies in this order:
 18. **DISCREPANCY-009:** Add HTTP request timeouts
 19. **DISCREPANCY-012:** Add missing intervals (4h, 1d) and document extras
 20. **DISCREPANCY-014:** Address service-to-service dependencies (or document as acceptable)
-21. **DISCREPANCY-015:** Fix 4 trivial tests with behavioral assertions
+21. ~~**DISCREPANCY-015:** Fix 4 trivial tests with behavioral assertions~~ **RESOLVED (2026-02-02)**
+    - Fixed logger.spec.ts to verify `typeof` of logger methods
+    - Fixed TradeRepublicMcpServer.spec.ts to verify Express app and MCP server interfaces
+    - Fixed index.spec.ts to verify WebSocket factory returns object with expected methods
 
 After fixing:
 1. Run `npm run test:coverage` to ensure tests pass

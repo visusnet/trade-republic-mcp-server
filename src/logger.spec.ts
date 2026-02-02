@@ -19,16 +19,22 @@ describe('logger', () => {
     jest.resetModules();
   });
 
-  it('should create loggers with pino-pretty', async () => {
+  it('should create loggers with expected interface', async () => {
     const { logger, createLogger } = await import('./logger');
 
-    expect(logger.server).toBeDefined();
-    expect(logger.tools).toBeDefined();
-    expect(logger.api).toBeDefined();
+    // Verify loggers have expected logging methods
+    expect(typeof logger.server.info).toBe('function');
+    expect(typeof logger.server.error).toBe('function');
+    expect(typeof logger.server.warn).toBe('function');
+    expect(typeof logger.tools.info).toBe('function');
+    expect(typeof logger.api.info).toBe('function');
 
+    // Verify createLogger returns a logger with expected methods
     const customLogger = createLogger('CustomScope');
-    expect(customLogger).toBeDefined();
-    expect(customLogger.info).toBeDefined();
+    expect(typeof customLogger.info).toBe('function');
+    expect(typeof customLogger.error).toBe('function');
+    expect(typeof customLogger.warn).toBe('function');
+    expect(typeof customLogger.debug).toBe('function');
   });
 
   it('should export redact paths for credential filtering', async () => {
