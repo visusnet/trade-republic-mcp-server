@@ -42,7 +42,9 @@ The project does NOT need to be built. Just call the tools.
 ### Argument Parsing
 
 - `"100 EUR"` - Budget of 100 EUR
-- `"interval=5m"` - 5 minute cycles
+- `"interval=5m"` - 5 minute cycles (scalping)
+- `"interval=4h"` - 4 hour cycles (swing trading)
+- `"interval=1d"` - Daily cycles (position trading)
 - `"strategy=conservative"` - Conservative strategy
 - `"dry-run"` - Simulate without real trades
 - `"no-compound"` - Disable profit compounding

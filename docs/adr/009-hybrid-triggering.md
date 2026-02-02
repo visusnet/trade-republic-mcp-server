@@ -33,7 +33,7 @@ How should the trading bot be triggered?
 
 ```typescript
 {
-  baseCheckInterval: '15m' | '1h' | '4h' | '1d',
+  baseCheckInterval: '5m' | '15m' | '1h' | '4h' | '1d',
   eventTriggers: {
     priceChangeThreshold: 0.05,  // 5% move
     volumeSpike: 2.0,            // 2x average volume

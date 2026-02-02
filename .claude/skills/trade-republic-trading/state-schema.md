@@ -70,7 +70,7 @@ Single Source of Truth for `.claude/trading-state.json` structure.
 | `session.stats.realizedPnL` | number | Realized P/L (EUR) |
 | `session.stats.realizedPnLPercent` | number | Realized P/L (%) |
 | `session.config.strategy` | string | "aggressive" / "conservative" / "scalping" |
-| `session.config.interval` | string | "5m" / "15m" / "1h" |
+| `session.config.interval` | string | "5m" / "15m" / "1h" / "4h" / "1d" |
 | `session.config.dryRun` | boolean | Dry-run mode active |
 | `session.config.allowedAssetTypes` | array | Asset types to trade |
 | `session.compound.enabled` | boolean | Is compound mode active |

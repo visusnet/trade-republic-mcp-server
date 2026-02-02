@@ -1989,7 +1989,9 @@ Add `autonomyLevel` to session config and implement confirmation/notification lo
 
 ---
 
-### DISCREPANCY-012: ADR-009 Incomplete Interval Options
+### DISCREPANCY-012: ADR-009 Incomplete Interval Options [RESOLVED]
+
+**Status:** RESOLVED (2026-02-02) - Updated ADR and skill to align interval options
 
 **ADR Reference:** ADR-009: Hybrid Triggering Mechanism (lines 34-35)
 
@@ -2019,6 +2021,12 @@ interval: "5m" / "15m" / "30m" / "1h"
 **Fix Required:**
 1. Add `4h` (14400 seconds) and `1d` (86400 seconds) to interval options
 2. Either document `5m`/`30m` in ADR or remove them
+
+**Resolution:**
+- Updated ADR-009 to include `5m` in baseCheckInterval (useful for scalping strategy)
+- Updated skill state-schema.md to include `4h` and `1d` intervals
+- Updated SKILL.md with examples for all intervals
+- Final aligned intervals: `5m`, `15m`, `1h`, `4h`, `1d`
 
 **Verification Evidence:**
 - Agent: Risk/Orders Agent 2 (Order Types & Triggering)
