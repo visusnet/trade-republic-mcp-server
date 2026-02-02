@@ -1857,7 +1857,9 @@ ADR-001 requires "Maintain heartbeat for connection health" but no heartbeat mec
 
 ---
 
-### DISCREPANCY-008: Concurrent Session Refresh Race Condition
+### DISCREPANCY-008: Concurrent Session Refresh Race Condition [RESOLVED]
+
+**Status:** RESOLVED (2026-02-02) - Added promise-based mutex to prevent concurrent refreshes
 
 **ADR Reference:** ADR-001 Implementation Guidelines
 
@@ -1876,6 +1878,9 @@ Multiple concurrent `ensureValidSession()` calls can trigger simultaneous refres
 
 **Fix Required:**
 Add mutex/lock on refresh operation to prevent concurrent refreshes.
+
+**Resolution:**
+Added `refreshPromise` property. Concurrent callers await the same promise instead of triggering multiple refreshes. Promise cleared via `finally()` after completion.
 
 ---
 

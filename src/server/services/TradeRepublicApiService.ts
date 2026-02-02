@@ -71,6 +71,7 @@ export class TradeRepublicApiService {
   private messageHandlers: ((message: WebSocketMessage) => void)[] = [];
   private errorHandlers: ((error: Error | WebSocketMessage) => void)[] = [];
   private initialized = false;
+  private refreshPromise: Promise<void> | null = null;
 
   /** Throttled fetch function - max 1 request per second (per ADR-001) */
   private readonly throttledFetch: FetchFunction;
@@ -297,6 +298,7 @@ export class TradeRepublicApiService {
 
   /**
    * Ensures the session is valid, refreshing if needed.
+   * Uses a mutex pattern to prevent concurrent refresh requests.
    */
   public async ensureValidSession(): Promise<void> {
     this.ensureInitialized();
@@ -307,7 +309,18 @@ export class TradeRepublicApiService {
 
     // Check if session is about to expire
     if (Date.now() >= this.sessionExpiresAt - SESSION_EXPIRATION_BUFFER_MS) {
-      await this.refreshSession();
+      // If refresh already in progress, wait for it
+      if (this.refreshPromise) {
+        await this.refreshPromise;
+        return;
+      }
+
+      // Start refresh and store promise
+      this.refreshPromise = this.refreshSession().finally(() => {
+        this.refreshPromise = null;
+      });
+
+      await this.refreshPromise;
     }
   }
 

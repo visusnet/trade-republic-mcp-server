@@ -714,6 +714,174 @@ describe('TradeRepublicApiService', () => {
 
       await expect(freshService.ensureValidSession()).rejects.toThrow();
     });
+
+    describe('concurrent refresh mutex', () => {
+      it('should only call refreshSession once for concurrent ensureValidSession calls', async () => {
+        // Force session to be expired by advancing time past expiration
+        await jest.advanceTimersByTimeAsync(
+          300000 - 30000 + 1000, // past 290s session duration minus 30s buffer
+        );
+
+        let refreshCallCount = 0;
+        mockFetch.mockImplementation(() => {
+          refreshCallCount++;
+          return Promise.resolve(createMockRefreshResponse() as Response);
+        });
+
+        // Call ensureValidSession concurrently (all before the fetch resolves)
+        const promises = [
+          service.ensureValidSession(),
+          service.ensureValidSession(),
+          service.ensureValidSession(),
+        ];
+
+        // Advance timers to let the fetch resolve
+        await jest.advanceTimersByTimeAsync(2000);
+
+        // Wait for all promises
+        const results = await Promise.all(promises);
+
+        // All promises should resolve
+        expect(results).toHaveLength(3);
+
+        // refreshSession should only be called ONCE
+        expect(refreshCallCount).toBe(1);
+      });
+
+      it('should propagate success to all concurrent callers', async () => {
+        // Force session to be expired
+        await jest.advanceTimersByTimeAsync(300000);
+
+        mockFetch.mockResolvedValue(createMockRefreshResponse() as Response);
+
+        const promises = [
+          service.ensureValidSession(),
+          service.ensureValidSession(),
+          service.ensureValidSession(),
+        ];
+
+        // Advance timers to let the fetch resolve
+        await jest.advanceTimersByTimeAsync(2000);
+
+        // All concurrent calls should resolve successfully
+        await expect(Promise.all(promises)).resolves.not.toThrow();
+      });
+
+      it('should propagate error to all concurrent callers', async () => {
+        // Force session to be expired
+        await jest.advanceTimersByTimeAsync(300000);
+
+        // Return 401 error which doesn't trigger retry (only 5xx and 429 retry)
+        mockFetch.mockResolvedValue({
+          ok: false,
+          status: 401,
+          json: () => Promise.resolve({ message: 'Session expired' }),
+        } as Response);
+
+        // Create promises that catch errors immediately to avoid unhandled rejection warnings
+        const results: Array<{
+          status: 'fulfilled' | 'rejected';
+          reason?: Error;
+        }> = [];
+        const createSettledPromise = async (): Promise<void> => {
+          try {
+            await service.ensureValidSession();
+            results.push({ status: 'fulfilled' });
+          } catch (error) {
+            results.push({ status: 'rejected', reason: error as Error });
+          }
+        };
+
+        // All concurrent calls
+        const promises = [
+          createSettledPromise(),
+          createSettledPromise(),
+          createSettledPromise(),
+        ];
+
+        // Advance timers to let the fetch resolve
+        await jest.advanceTimersByTimeAsync(2000);
+
+        await Promise.all(promises);
+
+        // All should be rejected
+        expect(results.every((r) => r.status === 'rejected')).toBe(true);
+
+        // All should have the same error message
+        expect(
+          results.every((r) => r.reason?.message === 'Session expired'),
+        ).toBe(true);
+      });
+
+      it('should clear promise after successful refresh allowing new refresh on next expiration', async () => {
+        // Force session to be expired
+        await jest.advanceTimersByTimeAsync(300000);
+
+        let refreshCallCount = 0;
+        mockFetch.mockImplementation(() => {
+          refreshCallCount++;
+          return Promise.resolve(createMockRefreshResponse() as Response);
+        });
+
+        // First batch of concurrent calls
+        const batch1 = [
+          service.ensureValidSession(),
+          service.ensureValidSession(),
+        ];
+        await jest.advanceTimersByTimeAsync(2000);
+        await Promise.all(batch1);
+        expect(refreshCallCount).toBe(1);
+
+        // Advance time past session expiration buffer to trigger another refresh
+        await jest.advanceTimersByTimeAsync(300000);
+
+        // Second batch should trigger a new refresh
+        const batch2 = [
+          service.ensureValidSession(),
+          service.ensureValidSession(),
+        ];
+        await jest.advanceTimersByTimeAsync(2000);
+        await Promise.all(batch2);
+        expect(refreshCallCount).toBe(2);
+      });
+
+      it('should clear promise after failed refresh allowing retry', async () => {
+        // Force session to be expired
+        await jest.advanceTimersByTimeAsync(300000);
+
+        let fetchCallCount = 0;
+        // Use 401 to avoid retry logic (only 5xx and 429 retry)
+        mockFetch.mockImplementation(() => {
+          fetchCallCount++;
+          if (fetchCallCount === 1) {
+            return Promise.resolve({
+              ok: false,
+              status: 401,
+              json: () => Promise.resolve({ message: 'First call fails' }),
+            } as Response);
+          }
+          return Promise.resolve(createMockRefreshResponse() as Response);
+        });
+
+        // First call fails - catch immediately to avoid unhandled rejection
+        let firstErrorMessage = '';
+        const promise1 = service.ensureValidSession().catch((e: unknown) => {
+          firstErrorMessage = (e as Error).message;
+        });
+        await jest.advanceTimersByTimeAsync(2000);
+        await promise1;
+        expect(firstErrorMessage).toBe('First call fails');
+
+        // Second call should work (promise was cleared after failure)
+        await jest.advanceTimersByTimeAsync(1000); // wait for rate limit
+        const promise2 = service.ensureValidSession();
+        await jest.advanceTimersByTimeAsync(2000);
+        await expect(promise2).resolves.toBeUndefined();
+
+        // Should have made 2 fetch calls (first failed, second succeeded)
+        expect(fetchCallCount).toBe(2);
+      });
+    });
   });
 
   describe('unsubscribe', () => {
