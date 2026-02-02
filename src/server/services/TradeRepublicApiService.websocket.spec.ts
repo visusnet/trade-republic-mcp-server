@@ -893,6 +893,594 @@ describe('WebSocketManager', () => {
     });
   });
 
+  describe('reconnection', () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('should reconnect on unexpected close', async () => {
+      const reconnectedHandler = jest.fn();
+      wsManager.on('reconnected', reconnectedHandler);
+
+      // Initial connect
+      const connectPromise = wsManager.connect('session=test-cookie');
+      mockWs.setReadyState(mockWs.OPEN);
+      emitOpen(mockWs);
+      await connectPromise;
+
+      expect(wsManager.getStatus()).toBe(ConnectionStatus.CONNECTED);
+
+      // Create new mock for reconnection BEFORE triggering close
+      const newMockWs = createMockWebSocket();
+      mockWsFactory.mockReturnValue(newMockWs as unknown as WebSocket);
+
+      // Simulate unexpected close - this triggers attemptReconnect()
+      emitClose(mockWs, 1006, 'Abnormal closure');
+
+      // After close, status should be DISCONNECTED (before reconnect)
+      expect(wsManager.getStatus()).toBe(ConnectionStatus.DISCONNECTED);
+
+      // Advance timer past first reconnect delay (1s)
+      await jest.advanceTimersByTimeAsync(1000);
+
+      // Now the connect() call is in flight - simulate successful reconnection
+      newMockWs.setReadyState(newMockWs.OPEN);
+      emitOpen(newMockWs);
+
+      // Let pending promises resolve (using multiple awaits to flush the promise queue)
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(wsManager.getStatus()).toBe(ConnectionStatus.CONNECTED);
+      expect(reconnectedHandler).toHaveBeenCalled();
+    });
+
+    it('should reconnect on heartbeat timeout', async () => {
+      const reconnectedHandler = jest.fn();
+      const errorHandler = jest.fn();
+      wsManager.on('reconnected', reconnectedHandler);
+      wsManager.on('error', errorHandler);
+
+      // Initial connect
+      const connectPromise = wsManager.connect('session=test-cookie');
+      mockWs.setReadyState(mockWs.OPEN);
+      emitOpen(mockWs);
+      await connectPromise;
+
+      // Create new mock for reconnection
+      const newMockWs = createMockWebSocket();
+      mockWsFactory.mockReturnValue(newMockWs as unknown as WebSocket);
+
+      // Advance time to trigger heartbeat timeout (40s)
+      await jest.advanceTimersByTimeAsync(40_000);
+
+      // The connection should have been marked as dead and error emitted
+      expect(errorHandler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringContaining('Connection timeout'),
+        }),
+      );
+
+      // After another 1s delay, reconnection should be attempted
+      await jest.advanceTimersByTimeAsync(1000);
+
+      // Simulate successful reconnection
+      newMockWs.setReadyState(newMockWs.OPEN);
+      emitOpen(newMockWs);
+
+      // Let pending promises resolve
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(wsManager.getStatus()).toBe(ConnectionStatus.CONNECTED);
+      expect(reconnectedHandler).toHaveBeenCalled();
+    });
+
+    it('should use exponential backoff delays', async () => {
+      // Initial connect
+      const connectPromise = wsManager.connect('session=test-cookie');
+      mockWs.setReadyState(mockWs.OPEN);
+      emitOpen(mockWs);
+      await connectPromise;
+
+      const initialFactoryCalls = mockWsFactory.mock.calls.length;
+
+      // Create failing mock WebSocket
+      const failingWs = createMockWebSocket();
+      mockWsFactory.mockReturnValue(failingWs as unknown as WebSocket);
+
+      // Simulate unexpected close
+      emitClose(mockWs, 1006, 'Abnormal closure');
+
+      // First attempt after 1s (1000 * 2^0)
+      // Advance 999ms - no call yet
+      await jest.advanceTimersByTimeAsync(999);
+      expect(mockWsFactory.mock.calls.length).toBe(initialFactoryCalls);
+
+      // Advance 1ms more - first reconnect attempt starts
+      await jest.advanceTimersByTimeAsync(1);
+      expect(mockWsFactory.mock.calls.length).toBe(initialFactoryCalls + 1);
+
+      // Fail the connection via close (simpler than error for testing)
+      emitClose(failingWs, 1006, 'Connection failed');
+      await Promise.resolve(); // Let promise rejection propagate
+
+      // Second attempt after 2s (1000 * 2^1)
+      const failingWs2 = createMockWebSocket();
+      mockWsFactory.mockReturnValue(failingWs2 as unknown as WebSocket);
+
+      await jest.advanceTimersByTimeAsync(2000);
+      expect(mockWsFactory.mock.calls.length).toBe(initialFactoryCalls + 2);
+
+      // Fail the connection
+      emitClose(failingWs2, 1006, 'Connection failed');
+      await Promise.resolve();
+
+      // Third attempt after 4s (1000 * 2^2)
+      const failingWs3 = createMockWebSocket();
+      mockWsFactory.mockReturnValue(failingWs3 as unknown as WebSocket);
+
+      await jest.advanceTimersByTimeAsync(4000);
+      expect(mockWsFactory.mock.calls.length).toBe(initialFactoryCalls + 3);
+
+      // Success on third attempt
+      failingWs3.setReadyState(failingWs3.OPEN);
+      emitOpen(failingWs3);
+      await Promise.resolve();
+
+      expect(wsManager.getStatus()).toBe(ConnectionStatus.CONNECTED);
+    });
+
+    it('should give up after 5 attempts and emit error', async () => {
+      const errorHandler = jest.fn();
+      wsManager.on('error', errorHandler);
+
+      // Initial connect
+      const connectPromise = wsManager.connect('session=test-cookie');
+      mockWs.setReadyState(mockWs.OPEN);
+      emitOpen(mockWs);
+      await connectPromise;
+
+      // Simulate unexpected close
+      emitClose(mockWs, 1006, 'Abnormal closure');
+
+      // Go through all 5 attempts with exponential backoff
+      const delays = [1000, 2000, 4000, 8000, 16000];
+      for (const delay of delays) {
+        const failingWs = createMockWebSocket();
+        mockWsFactory.mockReturnValue(failingWs as unknown as WebSocket);
+
+        await jest.advanceTimersByTimeAsync(delay);
+        emitClose(failingWs, 1006, 'Connection failed');
+        // Let the promise rejection propagate through the reconnect loop
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      }
+
+      // Let the final error emit propagate
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      // Should have emitted error about max reconnection attempts
+      expect(errorHandler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringContaining('Max reconnection attempts'),
+        }),
+      );
+    });
+
+    it('should resubscribe to all active topics after reconnect', async () => {
+      const reconnectedHandler = jest.fn();
+      wsManager.on('reconnected', reconnectedHandler);
+
+      // Initial connect
+      const connectPromise = wsManager.connect('session=test-cookie');
+      mockWs.setReadyState(mockWs.OPEN);
+      emitOpen(mockWs);
+      await connectPromise;
+
+      // Subscribe to topics
+      const subId1 = wsManager.subscribe('ticker', { isin: 'DE0007164600' });
+      const subId2 = wsManager.subscribe('portfolio');
+
+      // Create new mock for reconnection
+      const newMockWs = createMockWebSocket();
+      mockWsFactory.mockReturnValue(newMockWs as unknown as WebSocket);
+
+      // Simulate unexpected close
+      emitClose(mockWs, 1006, 'Abnormal closure');
+
+      // Advance timer past first reconnect delay (1s)
+      await jest.advanceTimersByTimeAsync(1000);
+
+      // Simulate successful reconnection
+      newMockWs.setReadyState(newMockWs.OPEN);
+      emitOpen(newMockWs);
+
+      // Let pending promises resolve
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      // Verify subscriptions were restored
+      const sendCalls = (newMockWs.send as jest.Mock).mock.calls.map(
+        (call) => call[0] as string,
+      );
+
+      // Should have connect message plus resubscriptions
+      expect(sendCalls).toContainEqual(expect.stringContaining('connect 31'));
+      expect(sendCalls).toContainEqual(
+        expect.stringContaining('"type":"ticker"'),
+      );
+      expect(sendCalls).toContainEqual(
+        expect.stringContaining('"isin":"DE0007164600"'),
+      );
+      expect(sendCalls).toContainEqual(
+        expect.stringContaining('"type":"portfolio"'),
+      );
+
+      // Original subscription IDs should be tracked
+      expect(subId1).toBeDefined();
+      expect(subId2).toBeDefined();
+      expect(reconnectedHandler).toHaveBeenCalled();
+    });
+
+    it('should NOT reconnect after intentional disconnect', async () => {
+      const reconnectedHandler = jest.fn();
+      wsManager.on('reconnected', reconnectedHandler);
+
+      // Initial connect
+      const connectPromise = wsManager.connect('session=test-cookie');
+      mockWs.setReadyState(mockWs.OPEN);
+      emitOpen(mockWs);
+      await connectPromise;
+
+      // Intentional disconnect
+      wsManager.disconnect();
+
+      // Factory should not be called again
+      const factoryCallCount = mockWsFactory.mock.calls.length;
+
+      // Advance time well past any reconnect delays
+      await jest.advanceTimersByTimeAsync(60_000);
+
+      // Should not have attempted to reconnect
+      expect(mockWsFactory.mock.calls.length).toBe(factoryCallCount);
+      expect(reconnectedHandler).not.toHaveBeenCalled();
+    });
+
+    it('should emit reconnected event on success', async () => {
+      const reconnectedHandler = jest.fn();
+      wsManager.on('reconnected', reconnectedHandler);
+
+      // Initial connect
+      const connectPromise = wsManager.connect('session=test-cookie');
+      mockWs.setReadyState(mockWs.OPEN);
+      emitOpen(mockWs);
+      await connectPromise;
+
+      // Create new mock for reconnection
+      const newMockWs = createMockWebSocket();
+      mockWsFactory.mockReturnValue(newMockWs as unknown as WebSocket);
+
+      // Simulate unexpected close
+      emitClose(mockWs, 1006, 'Abnormal closure');
+
+      // Advance timer past first reconnect delay (1s)
+      await jest.advanceTimersByTimeAsync(1000);
+
+      // Simulate successful reconnection
+      newMockWs.setReadyState(newMockWs.OPEN);
+      emitOpen(newMockWs);
+
+      // Let pending promises resolve
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(reconnectedHandler).toHaveBeenCalledTimes(1);
+    });
+
+    it('should clear previousResponses on reconnect', async () => {
+      const messageHandler = jest.fn();
+      const errorHandler = jest.fn();
+      wsManager.on('message', messageHandler);
+      wsManager.on('error', errorHandler);
+
+      // Initial connect
+      const connectPromise = wsManager.connect('session=test-cookie');
+      mockWs.setReadyState(mockWs.OPEN);
+      emitOpen(mockWs);
+      await connectPromise;
+
+      // Subscribe and establish previous response
+      const subId = wsManager.subscribe('ticker');
+      emitMessage(mockWs, Buffer.from(`${subId} A {"price":100}`));
+
+      // Create new mock for reconnection
+      const newMockWs = createMockWebSocket();
+      mockWsFactory.mockReturnValue(newMockWs as unknown as WebSocket);
+
+      // Simulate unexpected close
+      emitClose(mockWs, 1006, 'Abnormal closure');
+
+      // Advance timer past first reconnect delay (1s)
+      await jest.advanceTimersByTimeAsync(1000);
+
+      // Simulate successful reconnection
+      newMockWs.setReadyState(newMockWs.OPEN);
+      emitOpen(newMockWs);
+
+      // Let pending promises resolve
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      // Clear the handlers to track new messages
+      errorHandler.mockClear();
+
+      // Now try to send a delta on the same subId - should fail because previousResponses was cleared
+      emitMessage(newMockWs, Buffer.from(`${subId} D =10\t+50}`));
+
+      expect(errorHandler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringContaining('No previous response'),
+        }),
+      );
+    });
+
+    it('should reset reconnectAttempts to 0 on successful reconnect', async () => {
+      // Initial connect
+      const connectPromise = wsManager.connect('session=test-cookie');
+      mockWs.setReadyState(mockWs.OPEN);
+      emitOpen(mockWs);
+      await connectPromise;
+
+      // Fail first reconnect attempt
+      const failingWs = createMockWebSocket();
+      mockWsFactory.mockReturnValue(failingWs as unknown as WebSocket);
+
+      // Simulate unexpected close
+      emitClose(mockWs, 1006, 'Abnormal closure');
+
+      // First attempt after 1s
+      await jest.advanceTimersByTimeAsync(1000);
+      emitClose(failingWs, 1006, 'Connection failed');
+      await Promise.resolve();
+
+      // Second attempt after 2s - this one succeeds
+      const successWs = createMockWebSocket();
+      mockWsFactory.mockReturnValue(successWs as unknown as WebSocket);
+      await jest.advanceTimersByTimeAsync(2000);
+      successWs.setReadyState(successWs.OPEN);
+      emitOpen(successWs);
+
+      // Let pending promises resolve
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(wsManager.getStatus()).toBe(ConnectionStatus.CONNECTED);
+
+      // Now trigger another disconnect - the first reconnect delay should be 1s (not 4s)
+      const newFailingWs = createMockWebSocket();
+      mockWsFactory.mockReturnValue(newFailingWs as unknown as WebSocket);
+
+      emitClose(successWs, 1006, 'Abnormal closure');
+
+      const factoryCallsBefore = mockWsFactory.mock.calls.length;
+
+      // If reconnectAttempts was reset, delay should be 1s (2^0 * 1000)
+      await jest.advanceTimersByTimeAsync(1000);
+
+      // Should have attempted reconnect after 1s
+      expect(mockWsFactory.mock.calls.length).toBe(factoryCallsBefore + 1);
+    });
+
+    it('should reset isIntentionalDisconnect on new connect call', async () => {
+      // Use real timers for this test since we're not testing delays
+      jest.useRealTimers();
+
+      // Initial connect
+      const connectPromise = wsManager.connect('session=test-cookie');
+      mockWs.setReadyState(mockWs.OPEN);
+      emitOpen(mockWs);
+      await connectPromise;
+
+      // Intentional disconnect
+      wsManager.disconnect();
+
+      // Create new mock for next connection
+      const newMockWs = createMockWebSocket();
+      mockWsFactory.mockReturnValue(newMockWs as unknown as WebSocket);
+
+      // Now explicitly reconnect - isIntentionalDisconnect should be reset
+      const reconnectPromise = wsManager.connect('session=test-cookie');
+      newMockWs.setReadyState(newMockWs.OPEN);
+      emitOpen(newMockWs);
+      await reconnectPromise;
+
+      expect(wsManager.getStatus()).toBe(ConnectionStatus.CONNECTED);
+
+      // Re-enable fake timers
+      jest.useFakeTimers();
+
+      // Create another mock for reconnection after unexpected close
+      const newerMockWs = createMockWebSocket();
+      mockWsFactory.mockReturnValue(newerMockWs as unknown as WebSocket);
+
+      // Simulate unexpected close - should trigger auto-reconnect now
+      emitClose(newMockWs, 1006, 'Abnormal closure');
+
+      const factoryCallsBefore = mockWsFactory.mock.calls.length;
+
+      // Advance timer past first reconnect delay
+      await jest.advanceTimersByTimeAsync(1000);
+
+      // Should have attempted reconnect (isIntentionalDisconnect was reset)
+      expect(mockWsFactory.mock.calls.length).toBe(factoryCallsBefore + 1);
+    });
+
+    it('should remove subscription from tracking on unsubscribe', async () => {
+      const reconnectedHandler = jest.fn();
+      wsManager.on('reconnected', reconnectedHandler);
+
+      // Initial connect
+      const connectPromise = wsManager.connect('session=test-cookie');
+      mockWs.setReadyState(mockWs.OPEN);
+      emitOpen(mockWs);
+      await connectPromise;
+
+      // Subscribe to topics
+      const subId1 = wsManager.subscribe('ticker', { isin: 'DE0007164600' });
+      wsManager.subscribe('portfolio');
+
+      // Unsubscribe from one
+      wsManager.unsubscribe(subId1);
+
+      // Create new mock for reconnection
+      const newMockWs = createMockWebSocket();
+      mockWsFactory.mockReturnValue(newMockWs as unknown as WebSocket);
+
+      // Simulate unexpected close
+      emitClose(mockWs, 1006, 'Abnormal closure');
+
+      // Advance timer past first reconnect delay (1s)
+      await jest.advanceTimersByTimeAsync(1000);
+
+      // Simulate successful reconnection
+      newMockWs.setReadyState(newMockWs.OPEN);
+      emitOpen(newMockWs);
+
+      // Let pending promises resolve
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      // Verify only portfolio was resubscribed
+      const sendCalls = (newMockWs.send as jest.Mock).mock.calls.map(
+        (call) => call[0] as string,
+      );
+
+      expect(sendCalls).toContainEqual(
+        expect.stringContaining('"type":"portfolio"'),
+      );
+      expect(sendCalls).not.toContainEqual(
+        expect.stringContaining('"type":"ticker"'),
+      );
+    });
+
+    it('should clear activeSubscriptions on intentional disconnect', async () => {
+      const reconnectedHandler = jest.fn();
+      wsManager.on('reconnected', reconnectedHandler);
+
+      // Initial connect
+      const connectPromise = wsManager.connect('session=test-cookie');
+      mockWs.setReadyState(mockWs.OPEN);
+      emitOpen(mockWs);
+      await connectPromise;
+
+      // Subscribe to topics
+      wsManager.subscribe('ticker', { isin: 'DE0007164600' });
+      wsManager.subscribe('portfolio');
+
+      // Intentional disconnect - should clear subscriptions
+      wsManager.disconnect();
+
+      // Create new mock for next connection
+      const newMockWs = createMockWebSocket();
+      mockWsFactory.mockReturnValue(newMockWs as unknown as WebSocket);
+
+      // Manually reconnect
+      const reconnectPromise = wsManager.connect('session=test-cookie');
+      newMockWs.setReadyState(newMockWs.OPEN);
+      emitOpen(newMockWs);
+      await reconnectPromise;
+
+      // Verify no subscriptions were restored (only connect message)
+      const sendCalls = (newMockWs.send as jest.Mock).mock.calls.map(
+        (call) => call[0] as string,
+      );
+
+      const subCalls = sendCalls.filter((call) => call.startsWith('sub '));
+      expect(subCalls).toHaveLength(0);
+    });
+
+    it('should not attempt reconnect if already reconnecting', async () => {
+      // Initial connect
+      const connectPromise = wsManager.connect('session=test-cookie');
+      mockWs.setReadyState(mockWs.OPEN);
+      emitOpen(mockWs);
+      await connectPromise;
+
+      // Create failing mock
+      const failingWs = createMockWebSocket();
+      mockWsFactory.mockReturnValue(failingWs as unknown as WebSocket);
+
+      // Simulate unexpected close - triggers reconnect
+      emitClose(mockWs, 1006, 'Abnormal closure');
+
+      const factoryCallsBefore = mockWsFactory.mock.calls.length;
+
+      // Advance timer to start first reconnect
+      await jest.advanceTimersByTimeAsync(1000);
+
+      // Now we're in the middle of reconnecting
+      // Emit another close event - should not trigger a second parallel reconnect
+      emitClose(failingWs, 1006, 'Another closure');
+
+      // Wait a bit more
+      await jest.advanceTimersByTimeAsync(100);
+
+      // Should only have one more factory call (the original reconnect)
+      expect(mockWsFactory.mock.calls.length).toBe(factoryCallsBefore + 1);
+    });
+
+    it('should abort reconnection if intentionally disconnected during delay', async () => {
+      const reconnectedHandler = jest.fn();
+      wsManager.on('reconnected', reconnectedHandler);
+
+      // Initial connect
+      const connectPromise = wsManager.connect('session=test-cookie');
+      mockWs.setReadyState(mockWs.OPEN);
+      emitOpen(mockWs);
+      await connectPromise;
+
+      // Create new mock for potential reconnection
+      const newMockWs = createMockWebSocket();
+      mockWsFactory.mockReturnValue(newMockWs as unknown as WebSocket);
+
+      // Simulate unexpected close - triggers attemptReconnect
+      emitClose(mockWs, 1006, 'Abnormal closure');
+
+      // Advance timer partway through the delay (500ms of 1000ms)
+      await jest.advanceTimersByTimeAsync(500);
+
+      // Now intentionally disconnect while in the middle of waiting
+      wsManager.disconnect();
+
+      // Advance timer past the rest of the delay and more
+      await jest.advanceTimersByTimeAsync(1500);
+
+      // Let promises resolve
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      // The reconnect should have been aborted due to isIntentionalDisconnect check after sleep
+      expect(reconnectedHandler).not.toHaveBeenCalled();
+      expect(wsManager.getStatus()).toBe(ConnectionStatus.DISCONNECTED);
+    });
+  });
+
   describe('heartbeat mechanism', () => {
     beforeEach(() => {
       // Fake timers including Date.now() for heartbeat calculations

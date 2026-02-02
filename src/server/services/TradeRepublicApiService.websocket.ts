@@ -29,6 +29,12 @@ const HEARTBEAT_CHECK_MS = 20_000;
 /** Connection timeout in milliseconds (40s, 2x heartbeat interval) */
 const CONNECTION_TIMEOUT_MS = 40_000;
 
+/** Maximum number of reconnection attempts */
+const MAX_RECONNECT_ATTEMPTS = 5;
+
+/** Base delay for reconnection in milliseconds */
+const RECONNECT_BASE_DELAY_MS = 1000;
+
 /**
  * Manages WebSocket connection to Trade Republic API.
  *
@@ -50,6 +56,16 @@ export class WebSocketManager extends EventEmitter {
     null;
   private errorHandler: ((event: WebSocketErrorEvent) => void) | null = null;
   private closeHandler: ((event: WebSocketCloseEvent) => void) | null = null;
+
+  // Reconnection state
+  private activeSubscriptions: Map<
+    number,
+    { topic: string; payload?: object }
+  > = new Map();
+  private reconnectAttempts = 0;
+  private isReconnecting = false;
+  private isIntentionalDisconnect = false;
+  private lastCookieHeader = '';
 
   constructor(private readonly wsFactory: WebSocketFactory) {
     super();
@@ -79,12 +95,142 @@ export class WebSocketManager extends EventEmitter {
   }
 
   /**
-   * Handles a dead connection by disconnecting and emitting an error.
+   * Handles a dead connection by triggering reconnection.
    */
   private handleConnectionDead(): void {
     logger.api.warn('Connection dead - no message received in 40s');
-    this.disconnect();
+    this.stopHeartbeat();
+    this.cleanupWebSocket();
+    this.status = ConnectionStatus.DISCONNECTED;
     this.emit('error', new WebSocketError('Connection timeout'));
+    void this.attemptReconnect();
+  }
+
+  /**
+   * Cleans up the WebSocket by removing event listeners and closing.
+   * Does not clear subscriptions or state (used during reconnection).
+   */
+  private cleanupWebSocket(): void {
+    if (this.ws) {
+      if (this.openHandler) {
+        this.ws.removeEventListener(
+          'open',
+          this.openHandler as (...args: unknown[]) => void,
+        );
+        this.openHandler = null;
+      }
+      if (this.messageHandler) {
+        this.ws.removeEventListener(
+          'message',
+          this.messageHandler as (...args: unknown[]) => void,
+        );
+        this.messageHandler = null;
+      }
+      if (this.errorHandler) {
+        this.ws.removeEventListener(
+          'error',
+          this.errorHandler as (...args: unknown[]) => void,
+        );
+        this.errorHandler = null;
+      }
+      if (this.closeHandler) {
+        this.ws.removeEventListener(
+          'close',
+          this.closeHandler as (...args: unknown[]) => void,
+        );
+        this.closeHandler = null;
+      }
+      this.ws.close();
+      this.ws = null;
+    }
+  }
+
+  /**
+   * Sleeps for the specified number of milliseconds.
+   */
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Returns true if reconnection should be aborted.
+   * This is a separate method to avoid TypeScript's flow analysis issues
+   * with checking isIntentionalDisconnect after an await.
+   */
+  private shouldAbortReconnect(): boolean {
+    return this.isIntentionalDisconnect;
+  }
+
+  /**
+   * Attempts to reconnect with exponential backoff.
+   */
+  private async attemptReconnect(): Promise<void> {
+    // istanbul ignore if -- race condition: disconnect() during heartbeat check
+    if (this.isReconnecting || this.isIntentionalDisconnect) {
+      return;
+    }
+
+    this.isReconnecting = true;
+
+    while (this.reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+      const delay =
+        RECONNECT_BASE_DELAY_MS * Math.pow(2, this.reconnectAttempts);
+      logger.api.info(
+        `Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts + 1}/${MAX_RECONNECT_ATTEMPTS})`,
+      );
+      await this.sleep(delay);
+
+      // Check if intentionally disconnected while sleeping
+      // (isIntentionalDisconnect can be set by disconnect() during sleep)
+      if (this.shouldAbortReconnect()) {
+        this.isReconnecting = false;
+        return;
+      }
+
+      try {
+        await this.connect(this.lastCookieHeader);
+        this.resubscribeAll();
+        this.reconnectAttempts = 0;
+        this.isReconnecting = false;
+        this.emit('reconnected');
+        return;
+      } catch {
+        this.reconnectAttempts++;
+        logger.api.warn(
+          `Reconnection attempt ${this.reconnectAttempts} failed`,
+        );
+      }
+    }
+
+    this.isReconnecting = false;
+    this.emit(
+      'error',
+      new WebSocketError('Max reconnection attempts exceeded'),
+    );
+  }
+
+  /**
+   * Resubscribes to all active subscriptions after reconnection.
+   * Sends subscription messages without adding to activeSubscriptions (they're already tracked).
+   * Only called after successful connect(), so ws is guaranteed to be valid.
+   */
+  private resubscribeAll(): void {
+    const ws = this.ws;
+    // istanbul ignore if -- defensive check: ws should always be set after connect()
+    if (!ws) {
+      return;
+    }
+
+    for (const [, { topic, payload }] of this.activeSubscriptions) {
+      const subId = this.nextSubscriptionId++;
+      const message = {
+        type: topic,
+        ...payload,
+      };
+      const messageStr = `sub ${subId} ${JSON.stringify(message)}`;
+      logger.api.debug(`Resubscribing: ${messageStr}`);
+      ws.send(messageStr);
+    }
   }
 
   /**
@@ -97,6 +243,9 @@ export class WebSocketManager extends EventEmitter {
     }
 
     this.status = ConnectionStatus.CONNECTING;
+    this.lastCookieHeader = cookieHeader;
+    this.isIntentionalDisconnect = false;
+    this.previousResponses.clear();
     logger.api.info(`Connecting to WebSocket at ${TR_WS_URL}`);
 
     return new Promise((resolve, reject) => {
@@ -149,6 +298,7 @@ export class WebSocketManager extends EventEmitter {
           const reasonStr = event.reason;
           logger.api.info(`WebSocket closed: ${event.code} ${reasonStr}`);
           const wasConnecting = this.status === ConnectionStatus.CONNECTING;
+          const wasConnected = this.status === ConnectionStatus.CONNECTED;
           this.stopHeartbeat();
           this.status = ConnectionStatus.DISCONNECTED;
           if (wasConnecting) {
@@ -159,6 +309,9 @@ export class WebSocketManager extends EventEmitter {
                 ),
               );
             });
+          } else if (wasConnected && !this.isIntentionalDisconnect) {
+            // Unexpected close - attempt reconnection
+            void this.attemptReconnect();
           }
         };
 
@@ -177,45 +330,15 @@ export class WebSocketManager extends EventEmitter {
   }
 
   /**
-   * Disconnects the WebSocket connection.
+   * Disconnects the WebSocket connection intentionally.
    */
   public disconnect(): void {
+    this.isIntentionalDisconnect = true;
     this.stopHeartbeat();
-    if (this.ws) {
-      logger.api.info('Disconnecting WebSocket');
-      // Remove event listeners
-      if (this.openHandler) {
-        this.ws.removeEventListener(
-          'open',
-          this.openHandler as (...args: unknown[]) => void,
-        );
-        this.openHandler = null;
-      }
-      if (this.messageHandler) {
-        this.ws.removeEventListener(
-          'message',
-          this.messageHandler as (...args: unknown[]) => void,
-        );
-        this.messageHandler = null;
-      }
-      if (this.errorHandler) {
-        this.ws.removeEventListener(
-          'error',
-          this.errorHandler as (...args: unknown[]) => void,
-        );
-        this.errorHandler = null;
-      }
-      if (this.closeHandler) {
-        this.ws.removeEventListener(
-          'close',
-          this.closeHandler as (...args: unknown[]) => void,
-        );
-        this.closeHandler = null;
-      }
-      this.ws.close();
-      this.ws = null;
-    }
+    this.cleanupWebSocket();
     this.previousResponses.clear();
+    this.activeSubscriptions.clear();
+    this.reconnectAttempts = 0;
     this.status = ConnectionStatus.DISCONNECTED;
   }
 
@@ -244,6 +367,9 @@ export class WebSocketManager extends EventEmitter {
     logger.api.debug(`Subscribing: ${messageStr}`);
     this.ws.send(messageStr);
 
+    // Track subscription for reconnection
+    this.activeSubscriptions.set(subId, { topic, payload });
+
     return subId;
   }
 
@@ -258,6 +384,9 @@ export class WebSocketManager extends EventEmitter {
     const messageStr = `unsub ${subscriptionId}`;
     logger.api.debug(`Unsubscribing: ${messageStr}`);
     this.ws.send(messageStr);
+
+    // Remove from tracking
+    this.activeSubscriptions.delete(subscriptionId);
   }
 
   /**
