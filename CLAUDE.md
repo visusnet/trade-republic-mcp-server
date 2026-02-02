@@ -60,9 +60,14 @@ Files:
 
 # Related Projects
 
-You will find an autonomous trading bot for Coinbase here: `../coinbase-mcp-server`. It consists of a custom MCP server and a Claude Skill that trades on Coinbase. You can use it as a reference for building the Trade Republic trading bot but you do not have to adhere to its implementation details. What you should take away from it are:
-- How to structure the MCP server and Claude Skill.
-- How to use knip, lint, prettier, jest, rollup, and zod in a TypeScript project.
+You will find an autonomous trading bot for Coinbase here: `../coinbase-mcp-server`. It consists of a custom MCP server and a Claude Skill that trades on Coinbase.
+
+**IMPORTANT:** The trade-republic-mcp-server should have nearly identical API, architecture, structure, rules, design, naming conventions, and patterns as the coinbase-mcp-server. The only differences should be:
+- Domain-specific adaptations (e.g., Trade Republic has stocks, ETFs, derivatives which Coinbase doesn't have)
+- Some fields may have different names, may not exist, or new fields may exist that coinbase-mcp-server doesn't have
+- Trade Republic-specific API behaviors (authentication, WebSocket protocol, etc.)
+
+When implementing new features, always check how coinbase-mcp-server implements equivalent functionality and mirror its patterns unless there's a domain-specific reason not to.
 
 # When to start
 

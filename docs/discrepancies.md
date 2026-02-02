@@ -1911,7 +1911,9 @@ Added `HTTP_TIMEOUT_MS = 10000` constant (matches pytr). Each fetch attempt in `
 
 ---
 
-### DISCREPANCY-010: ADR-009 Missing Event Triggers
+### DISCREPANCY-010: ADR-009 Missing Event Triggers [RESOLVED]
+
+**Status:** RESOLVED (2026-02-02) - Implemented MarketEventService with wait_for_market_event tool
 
 **ADR Reference:** ADR-009: Hybrid Triggering Mechanism (lines 28-41)
 
@@ -1946,6 +1948,15 @@ No event-driven triggering found. The skill operates on a **polling-based loop o
 
 **Fix Required:**
 Implement event monitoring system that can trigger analysis outside scheduled intervals.
+
+**Resolution:**
+Implemented `MarketEventService` with `wait_for_market_event` MCP tool following coinbase-mcp-server patterns:
+- Condition fields: bid, ask, mid, last, spread, spreadPercent
+- Operators: gt, gte, lt, lte, crossAbove, crossBelow
+- Logic: ANY (OR) or ALL (AND) per subscription
+- Multiple ISINs: up to 5 subscriptions monitored simultaneously
+- 55-second timeout (avoids MCP timeout)
+- Real-time WebSocket monitoring with immediate trigger on condition match
 
 ---
 

@@ -84,6 +84,10 @@ import {
   PlaceOrderResponseSchema,
   GetOrdersResponseSchema,
   CancelOrderResponseSchema,
+  MarketEventService,
+  MarketEventError,
+  WaitForMarketEventRequestSchema,
+  WaitForMarketEventResponseSchema,
   type FileSystem,
 } from './index';
 
@@ -107,6 +111,7 @@ describe('Services Index', () => {
       expect(typeof FundamentalsService).toBe('function');
       expect(typeof RiskService).toBe('function');
       expect(typeof OrderService).toBe('function');
+      expect(typeof MarketEventService).toBe('function');
     });
 
     it('should export error classes that extend Error', () => {
@@ -137,6 +142,10 @@ describe('Services Index', () => {
 
       const orderError = new OrderServiceError('test');
       expect(orderError).toBeInstanceOf(Error);
+
+      const marketEventError = new MarketEventError('test');
+      expect(marketEventError).toBeInstanceOf(Error);
+      expect(marketEventError.name).toBe('MarketEventError');
       expect(orderError.name).toBe('OrderServiceError');
     });
 
@@ -254,6 +263,29 @@ describe('Services Index', () => {
       expect(typeof PlaceOrderResponseSchema.shape).toBe('object');
       expect(typeof GetOrdersResponseSchema.shape).toBe('object');
       expect(typeof CancelOrderResponseSchema.shape).toBe('object');
+    });
+
+    it('should export MarketEvent schemas that parse valid input', () => {
+      expect(
+        WaitForMarketEventRequestSchema.safeParse({
+          subscriptions: [
+            {
+              isin: 'DE0007164600',
+              conditions: [{ field: 'bid', operator: 'gt', value: 100 }],
+            },
+          ],
+        }).success,
+      ).toBe(true);
+
+      // WaitForMarketEventResponseSchema is a discriminated union, not an object with shape
+      expect(
+        WaitForMarketEventResponseSchema.safeParse({
+          status: 'timeout',
+          lastTickers: {},
+          duration: 55,
+          timestamp: '2025-01-25T12:00:00.000Z',
+        }).success,
+      ).toBe(true);
     });
   });
 

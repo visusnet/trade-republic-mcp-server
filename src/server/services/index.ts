@@ -86,6 +86,12 @@ export * from './OrderService.response';
 export * from './OrderService.types';
 export { OrderService } from './OrderService';
 
+// Market Event Service exports
+export * from './MarketEventService.request';
+export * from './MarketEventService.response';
+export { MarketEventError } from './MarketEventService.types';
+export { MarketEventService } from './MarketEventService';
+
 /**
  * Default file system implementation using Node.js fs module.
  */

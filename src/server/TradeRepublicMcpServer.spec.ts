@@ -142,7 +142,7 @@ describe('TradeRepublicMcpServer', () => {
       expect(toolNames).toContain('wait_for_market');
     });
 
-    it('should register all 14 tools when apiService is provided', async () => {
+    it('should register all tools when apiService is provided', async () => {
       const mockApiService = createMockApiService();
       const serverWithApi = new TradeRepublicMcpServer(mockApiService);
       const mcpServerWithApi = serverWithApi.getMcpServer();
@@ -159,8 +159,31 @@ describe('TradeRepublicMcpServer', () => {
       ]);
 
       const tools = await clientWithApi.listTools({});
-      // 2 portfolio + 7 market data + 2 technical analysis + 3 external data + 2 risk management + 4 execution = 20 total
-      expect(tools.tools).toHaveLength(20);
+      // 2 portfolio + 7 market data + 1 market event + 2 technical analysis + 3 external data + 2 risk management + 4 execution = 21 total
+      expect(tools.tools).toHaveLength(21);
+    });
+  });
+
+  describe('Market Event Tools', () => {
+    it('should register market event tools when apiService is provided', async () => {
+      const mockApiService = createMockApiService();
+      const serverWithApi = new TradeRepublicMcpServer(mockApiService);
+      const mcpServerWithApi = serverWithApi.getMcpServer();
+
+      const clientWithApi = new Client(
+        { name: 'test-client', version: '1.0.0' },
+        { capabilities: {} },
+      );
+      const [clientTransport, serverTransport] =
+        InMemoryTransport.createLinkedPair();
+      await Promise.all([
+        clientWithApi.connect(clientTransport),
+        mcpServerWithApi.connect(serverTransport),
+      ]);
+
+      const tools = await clientWithApi.listTools({});
+      const toolNames = tools.tools.map((t) => t.name);
+      expect(toolNames).toContain('wait_for_market_event');
     });
   });
 

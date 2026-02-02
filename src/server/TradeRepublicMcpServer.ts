@@ -6,6 +6,7 @@ import type { Express, Request, Response } from 'express';
 import { logger } from '../logger';
 import { FundamentalsService } from './services/FundamentalsService';
 import { MarketDataService } from './services/MarketDataService';
+import { MarketEventService } from './services/MarketEventService';
 import { NewsService } from './services/NewsService';
 import { OrderService } from './services/OrderService';
 import { PortfolioService } from './services/PortfolioService';
@@ -18,6 +19,7 @@ import {
   ExecutionToolRegistry,
   ExternalDataToolRegistry,
   MarketDataToolRegistry,
+  MarketEventToolRegistry,
   PortfolioToolRegistry,
   RiskManagementToolRegistry,
   TechnicalAnalysisToolRegistry,
@@ -87,6 +89,7 @@ export class TradeRepublicMcpServer {
 TOOL CATEGORIES (to be implemented):
 - Portfolio: get_portfolio, get_cash_balance
 - Market Data: get_price, get_price_history, get_order_book, search_assets, get_asset_info, get_market_status, wait_for_market
+- Market Events: wait_for_market_event (event-driven triggers based on price conditions)
 - Technical Analysis: get_indicators, get_detailed_analysis
 - External Data: get_news, get_sentiment, get_fundamentals
 - Risk Management: calculate_position_size, get_risk_metrics
@@ -146,6 +149,13 @@ BEST PRACTICES:
         orderService,
       );
       executionToolRegistry.register();
+
+      const marketEventService = new MarketEventService(this.apiService);
+      const marketEventToolRegistry = new MarketEventToolRegistry(
+        server,
+        marketEventService,
+      );
+      marketEventToolRegistry.register();
     }
 
     // External data tools don't require authentication
