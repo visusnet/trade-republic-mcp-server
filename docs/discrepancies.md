@@ -1844,7 +1844,7 @@ Implement automatic reconnection with exponential backoff when WebSocket connect
 
 ---
 
-### DISCREPANCY-007: ADR-001 Missing Heartbeat/Keep-Alive
+### ~~DISCREPANCY-007: ADR-001 Missing Heartbeat/Keep-Alive~~ RESOLVED (2026-02-02)
 
 **ADR Reference:** ADR-001: Trade Republic API Integration (line 91)
 
@@ -1853,15 +1853,13 @@ Implement automatic reconnection with exponential backoff when WebSocket connect
 **Description:**
 ADR-001 requires "Maintain heartbeat for connection health" but no heartbeat mechanism is implemented.
 
-**Actual Implementation:**
-No ping/pong or periodic heartbeat messages found. WebSocketManager has no timer or interval for keep-alive.
-
-**Impact:**
-- Cannot detect silent connection failures
-- Stale connections may persist undetected
-
-**Fix Required:**
-Implement periodic heartbeat/ping mechanism to detect connection health.
+**Resolution:**
+- Replaced `ws` library with `undici` WebSocket (built into Node.js 24+)
+- Updated WebSocket API from `on()` to `addEventListener()`
+- Added heartbeat mechanism: checks every 20 seconds, disconnects after 40 seconds of no messages
+- Tracks `lastMessageTime`, resets on each received message
+- Emits `Connection timeout` error and disconnects when connection is considered dead
+- See commit: `fix: replace ws with undici WebSocket and add heartbeat (DISCREPANCY-007)`
 
 ---
 
@@ -2873,7 +2871,12 @@ After all agents complete, fix discrepancies in this order:
    - Following pytr pattern
 
 9. ~~**DISCREPANCY-005:** Implement circuit breaker pattern~~ **NON-ISSUE (2026-02-02)** - YAGNI, LLM handles failures intelligently
-10. **DISCREPANCY-007:** Implement heartbeat/keep-alive mechanism
+10. ~~**DISCREPANCY-007:** Implement heartbeat/keep-alive mechanism~~ **RESOLVED (2026-02-02)**
+    - Replaced `ws` library with `undici` WebSocket (built into Node.js 24+)
+    - Updated WebSocket API from `on()` to `addEventListener()`
+    - Added heartbeat: checks every 20s, disconnects after 40s of no messages
+    - Tracks `lastMessageTime`, resets on each received message
+    - Emits `Connection timeout` error and disconnects when dead
 11. **DISCREPANCY-008:** Fix concurrent session refresh race condition
 12. **DISCREPANCY-010:** Implement event triggers for ADR-009
 13. **DISCREPANCY-011:** Implement autonomy levels (full/confirm/notify)
