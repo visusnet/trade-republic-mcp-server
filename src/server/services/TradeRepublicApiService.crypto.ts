@@ -5,12 +5,12 @@
  */
 
 import crypto from 'node:crypto';
+import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
 import { logger } from '../../logger';
 import {
   KEY_FILE_NAME,
-  type FileSystem,
   type KeyPair,
   type SignedPayload,
 } from './TradeRepublicApiService.types';
@@ -26,10 +26,7 @@ import {
 export class CryptoManager {
   private readonly keyFilePath: string;
 
-  constructor(
-    private readonly baseDir: string,
-    private readonly fileSystem: FileSystem,
-  ) {
+  constructor(private readonly baseDir: string) {
     this.keyFilePath = path.join(baseDir, KEY_FILE_NAME);
   }
 
@@ -62,11 +59,8 @@ export class CryptoManager {
    */
   public async saveKeyPair(keyPair: KeyPair): Promise<void> {
     logger.api.info(`Saving key pair to ${this.keyFilePath}`);
-    await this.fileSystem.mkdir(this.baseDir, { recursive: true });
-    await this.fileSystem.writeFile(
-      this.keyFilePath,
-      JSON.stringify(keyPair, null, 2),
-    );
+    await fs.mkdir(this.baseDir, { recursive: true });
+    await fs.writeFile(this.keyFilePath, JSON.stringify(keyPair, null, 2));
   }
 
   /**
@@ -74,12 +68,12 @@ export class CryptoManager {
    * Returns null if no key pair exists.
    */
   public async loadKeyPair(): Promise<KeyPair | null> {
-    const exists = await this.fileSystem.exists(this.keyFilePath);
+    const exists = await this.hasStoredKeyPair();
     if (!exists) {
       return null;
     }
     logger.api.info(`Loading key pair from ${this.keyFilePath}`);
-    const data = await this.fileSystem.readFile(this.keyFilePath);
+    const data = await fs.readFile(this.keyFilePath, 'utf-8');
     return JSON.parse(data) as KeyPair;
   }
 
@@ -87,7 +81,12 @@ export class CryptoManager {
    * Checks if a stored key pair exists.
    */
   public async hasStoredKeyPair(): Promise<boolean> {
-    return this.fileSystem.exists(this.keyFilePath);
+    try {
+      await fs.access(this.keyFilePath);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /**

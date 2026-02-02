@@ -1,26 +1,8 @@
 /**
- * Trade Republic API Service - Exports and Factory
+ * Trade Republic API Service - Exports
  *
- * This module exports all service components and provides a factory
- * function for creating the Trade Republic API service with default
- * dependencies.
+ * This module exports all service components.
  */
-
-import { promises as fs } from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-
-import { WebSocket as UndiciWebSocket } from 'undici';
-
-import { CryptoManager } from './TradeRepublicApiService.crypto';
-import { TradeRepublicApiService } from './TradeRepublicApiService';
-import {
-  DEFAULT_CONFIG_DIR,
-  type FileSystem,
-  type WebSocket,
-  type WebSocketOptions,
-} from './TradeRepublicApiService.types';
-import { WebSocketManager } from './TradeRepublicApiService.websocket';
 
 // Re-export all types and schemas
 export * from './TradeRepublicApiService.types';
@@ -29,6 +11,7 @@ export * from './TradeRepublicApiService.response';
 export { CryptoManager } from './TradeRepublicApiService.crypto';
 export { WebSocketManager } from './TradeRepublicApiService.websocket';
 export { TradeRepublicApiService } from './TradeRepublicApiService';
+export { TradeRepublicCredentials } from './TradeRepublicCredentials';
 
 // Portfolio Service exports
 export * from './PortfolioService.request';
@@ -91,88 +74,3 @@ export * from './MarketEventService.request';
 export * from './MarketEventService.response';
 export { MarketEventError } from './MarketEventService.types';
 export { MarketEventService } from './MarketEventService';
-
-/**
- * Default file system implementation using Node.js fs module.
- */
-export const defaultFileSystem: FileSystem = {
-  async readFile(filePath: string): Promise<string> {
-    return fs.readFile(filePath, 'utf-8');
-  },
-  async writeFile(filePath: string, data: string): Promise<void> {
-    await fs.writeFile(filePath, data, 'utf-8');
-  },
-  async exists(filePath: string): Promise<boolean> {
-    try {
-      await fs.access(filePath);
-      return true;
-    } catch {
-      return false;
-    }
-  },
-  async mkdir(
-    dirPath: string,
-    options?: { recursive?: boolean },
-  ): Promise<void> {
-    await fs.mkdir(dirPath, options);
-  },
-};
-
-/**
- * Default WebSocket factory using undici WebSocket (built into Node.js 24+).
- */
-export function defaultWebSocketFactory(
-  url: string,
-  options?: WebSocketOptions,
-): WebSocket {
-  // undici WebSocket accepts headers as part of the options
-  const wsOptions = options?.headers ? { headers: options.headers } : undefined;
-  return new UndiciWebSocket(url, wsOptions) as unknown as WebSocket;
-}
-
-/**
- * Options for creating the Trade Republic API service.
- */
-export interface CreateTradeRepublicApiServiceOptions {
-  /** Trade Republic account phone number */
-  phoneNumber: string;
-  /** Trade Republic account PIN */
-  pin: string;
-  /** Custom config directory. Defaults to ~/.trade-republic-mcp/ */
-  configDir?: string;
-  /** Custom file system implementation. Defaults to Node.js fs. */
-  fileSystem?: FileSystem;
-  /** Custom fetch function. Defaults to global fetch. */
-  fetchFn?: typeof fetch;
-}
-
-/**
- * Creates a TradeRepublicApiService with default dependencies.
- *
- * By default:
- * - Uses ~/.trade-republic-mcp/ for key storage
- * - Uses Node.js fs for file operations
- * - Uses undici WebSocket (built into Node.js 24+) for WebSocket connections
- * - Uses global fetch for HTTP requests
- *
- * @param options - Optional configuration options
- * @returns A configured TradeRepublicApiService instance
- */
-export function createTradeRepublicApiService(
-  options: CreateTradeRepublicApiServiceOptions,
-): TradeRepublicApiService {
-  const configDir =
-    options.configDir ?? path.join(os.homedir(), DEFAULT_CONFIG_DIR);
-  const fileSystem = options.fileSystem ?? defaultFileSystem;
-  const fetchFn = options.fetchFn ?? fetch;
-
-  const cryptoManager = new CryptoManager(configDir, fileSystem);
-  const webSocketManager = new WebSocketManager(defaultWebSocketFactory);
-
-  return new TradeRepublicApiService(
-    { phoneNumber: options.phoneNumber, pin: options.pin },
-    cryptoManager,
-    webSocketManager,
-    fetchFn,
-  );
-}

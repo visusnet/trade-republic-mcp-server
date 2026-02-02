@@ -5,36 +5,44 @@
  * Handles authentication, session management, and WebSocket communication.
  */
 
+import os from 'node:os';
+import path from 'node:path';
+
 import pRetry from 'p-retry';
 import pThrottle from 'p-throttle';
+import { WebSocket as UndiciWebSocket } from 'undici';
 
 import { logger } from '../../logger';
-import type { CryptoManager } from './TradeRepublicApiService.crypto';
+import { CryptoManager } from './TradeRepublicApiService.crypto';
 import {
-  CredentialsSchema,
+  EnterTwoFactorCodeRequestSchema,
   SubscribeRequestSchema,
   TwoFactorCodeSchema,
-  type CredentialsInput,
+  type EnterTwoFactorCodeRequest,
   type SubscribeRequestInput,
 } from './TradeRepublicApiService.request';
 import {
   ErrorResponseSchema,
   LoginResponseSchema,
+  type EnterTwoFactorCodeResponse,
 } from './TradeRepublicApiService.response';
 import {
   AuthenticationError,
   AuthStatus,
+  DEFAULT_CONFIG_DIR,
   DEFAULT_SESSION_DURATION_MS,
   HTTP_TIMEOUT_MS,
   MESSAGE_CODE,
   TR_API_URL,
   TradeRepublicError,
-  type FetchFunction,
+  TwoFactorCodeRequiredException,
   type KeyPair,
   type StoredCookie,
   type WebSocketMessage,
+  type WebSocketOptions,
 } from './TradeRepublicApiService.types';
-import type { WebSocketManager } from './TradeRepublicApiService.websocket';
+import { WebSocketManager } from './TradeRepublicApiService.websocket';
+import { TradeRepublicCredentials } from './TradeRepublicCredentials';
 
 /** Session expiration buffer (30 seconds before actual expiration) */
 const SESSION_EXPIRATION_BUFFER_MS = 30 * 1000;
@@ -59,7 +67,7 @@ const RETRY_CONFIG = {
  * the Trade Republic API.
  *
  * Usage:
- * 1. Create service with credentials and dependencies
+ * 1. Create service with credentials
  * 2. Call connect(twoFactorCode) to authenticate
  * 3. Use subscribeAndWait() for data retrieval
  * 4. Call disconnect() when done
@@ -76,42 +84,47 @@ export class TradeRepublicApiService {
   private refreshPromise: Promise<void> | null = null;
 
   /** Throttled fetch function - max 1 request per second (per ADR-001) */
-  private readonly throttledFetch: FetchFunction;
+  private readonly throttledFetch: typeof fetch;
 
-  /** Stored credentials for authentication */
-  private readonly credentials: { phoneNumber: string; pin: string };
+  /** Crypto manager for key generation and signing */
+  private readonly cryptoManager: CryptoManager;
 
-  constructor(
-    credentials: CredentialsInput,
-    private readonly crypto: CryptoManager,
-    private readonly ws: WebSocketManager,
-    private readonly fetchFn: FetchFunction,
-  ) {
-    // Validate credentials at construction time
-    const validationResult = CredentialsSchema.safeParse(credentials);
-    if (!validationResult.success) {
-      throw new AuthenticationError(
-        `Invalid credentials: ${validationResult.error.message}`,
-      );
-    }
-    this.credentials = validationResult.data;
+  /** WebSocket manager for real-time communication */
+  private readonly webSocketManager: WebSocketManager;
+
+  constructor(private readonly credentials: TradeRepublicCredentials) {
+    // Initialize CryptoManager with default config directory
+    const configDir = path.join(os.homedir(), DEFAULT_CONFIG_DIR);
+    this.cryptoManager = new CryptoManager(configDir);
+
+    // Initialize WebSocketManager with undici WebSocket factory
+    /* istanbul ignore next -- @preserve Factory callback only invoked by WebSocketManager internals */
+    this.webSocketManager = new WebSocketManager(
+      (url: string, options?: WebSocketOptions) => {
+        return new UndiciWebSocket(
+          url,
+          options,
+        ) as unknown as import('./TradeRepublicApiService.types').WebSocket;
+      },
+    );
+
     // Rate limit: 1 request per second (per ADR-001)
     const throttle = pThrottle({ limit: 1, interval: 1000 });
 
     // Compose: throttle(retry(fetch))
     // Each retry attempt respects rate limiting
-    const retryFetch = this.createRetryFetch(this.fetchFn);
-    this.throttledFetch = throttle((...args: Parameters<FetchFunction>) =>
+    const retryFetch = this.createRetryFetch();
+    this.throttledFetch = throttle((...args: Parameters<typeof fetch>) =>
       retryFetch(...args),
-    ) as FetchFunction;
+    ) as typeof fetch;
 
     // Forward WebSocket events
-    this.ws.on('message', (message: WebSocketMessage) => {
+    this.webSocketManager.on('message', (message: WebSocketMessage) => {
       this.messageHandlers.forEach((handler) => {
         handler(message);
       });
     });
-    this.ws.on('error', (error: Error | WebSocketMessage) => {
+    this.webSocketManager.on('error', (error: Error | WebSocketMessage) => {
       this.errorHandlers.forEach((handler) => {
         handler(error);
       });
@@ -122,6 +135,8 @@ export class TradeRepublicApiService {
    * Connects to the Trade Republic API with 2FA verification.
    * Handles initialization, login, and 2FA in one call.
    *
+   * @internal This method is for testing only. For MCP tools, use subscribeAndWait
+   * which handles lazy authentication and enterTwoFactorCode for 2FA verification.
    * @param twoFactorCode - The 2FA code received via SMS
    */
   public async connect(twoFactorCode: string): Promise<void> {
@@ -141,18 +156,57 @@ export class TradeRepublicApiService {
   }
 
   /**
+   * Enters the two-factor authentication code.
+   * This method never throws - it always returns a message indicating success or failure.
+   *
+   * @param request - The request containing the 2FA code
+   * @returns Response with a message indicating success or failure
+   */
+  public async enterTwoFactorCode(
+    request: EnterTwoFactorCodeRequest,
+  ): Promise<EnterTwoFactorCodeResponse> {
+    // Validate request
+    const validationResult = EnterTwoFactorCodeRequestSchema.safeParse(request);
+    if (!validationResult.success) {
+      return { message: 'Code is required' };
+    }
+
+    // Check if already authenticated
+    if (this.authStatus === AuthStatus.AUTHENTICATED) {
+      return { message: 'Already authenticated' };
+    }
+
+    // Check if awaiting 2FA
+    if (this.authStatus !== AuthStatus.AWAITING_2FA) {
+      return {
+        message: 'Not awaiting 2FA verification. Initiate login first.',
+      };
+    }
+
+    try {
+      await this.verify2FA(validationResult.data.code);
+      return { message: 'Authentication successful' };
+    } catch (error) {
+      /* istanbul ignore next -- @preserve Defensive fallback: p-retry wraps non-Errors */
+      const errorMessage =
+        error instanceof Error ? error.message : '2FA verification failed';
+      return { message: errorMessage };
+    }
+  }
+
+  /**
    * Initializes the service by loading or generating ECDSA key pair.
    */
   private async initialize(): Promise<void> {
     logger.api.info('Initializing TradeRepublicApiService');
 
-    if (await this.crypto.hasStoredKeyPair()) {
+    if (await this.cryptoManager.hasStoredKeyPair()) {
       logger.api.info('Loading existing key pair');
-      this.keyPair = await this.crypto.loadKeyPair();
+      this.keyPair = await this.cryptoManager.loadKeyPair();
     } else {
       logger.api.info('Generating new key pair');
-      this.keyPair = await this.crypto.generateKeyPair();
-      await this.crypto.saveKeyPair(this.keyPair);
+      this.keyPair = await this.cryptoManager.generateKeyPair();
+      await this.cryptoManager.saveKeyPair(this.keyPair);
     }
 
     this.initialized = true;
@@ -216,7 +270,7 @@ export class TradeRepublicApiService {
     if (!this.keyPair) {
       throw new TradeRepublicError('Key pair not initialized');
     }
-    const publicKeyBase64 = this.crypto.getPublicKeyBase64(
+    const publicKeyBase64 = this.cryptoManager.getPublicKeyBase64(
       this.keyPair.publicKeyPem,
     );
 
@@ -259,7 +313,7 @@ export class TradeRepublicApiService {
 
     // Connect WebSocket with cookies as header
     const cookieHeader = this.getCookieHeader();
-    await this.ws.connect(cookieHeader);
+    await this.webSocketManager.connect(cookieHeader);
 
     logger.api.info('Authentication complete');
   }
@@ -341,6 +395,34 @@ export class TradeRepublicApiService {
   }
 
   /**
+   * Ensures the user is authenticated, initiating login if needed.
+   * Throws TwoFactorCodeRequiredException if 2FA is required.
+   */
+  private async ensureAuthenticatedOrThrow(): Promise<void> {
+    // If already authenticated, just ensure session is valid
+    if (this.authStatus === AuthStatus.AUTHENTICATED) {
+      await this.ensureValidSession();
+      return;
+    }
+
+    // If awaiting 2FA, throw exception to prompt user
+    if (this.authStatus === AuthStatus.AWAITING_2FA) {
+      throw new TwoFactorCodeRequiredException(
+        this.credentials.getMaskedPhoneNumber(),
+      );
+    }
+
+    // Not authenticated - initiate login flow
+    await this.initialize();
+    await this.login();
+
+    // Now in AWAITING_2FA state - throw exception
+    throw new TwoFactorCodeRequiredException(
+      this.credentials.getMaskedPhoneNumber(),
+    );
+  }
+
+  /**
    * Subscribes to a topic with optional payload.
    * Returns the subscription ID.
    */
@@ -351,7 +433,7 @@ export class TradeRepublicApiService {
         `Invalid subscription request: ${validationResult.error.message}`,
       );
     }
-    return this.ws.subscribe(
+    return this.webSocketManager.subscribe(
       validationResult.data.topic,
       validationResult.data.payload,
     );
@@ -361,11 +443,14 @@ export class TradeRepublicApiService {
    * Unsubscribes from a subscription by ID.
    */
   public unsubscribe(subscriptionId: number): void {
-    this.ws.unsubscribe(subscriptionId);
+    this.webSocketManager.unsubscribe(subscriptionId);
   }
 
   /**
    * Returns the current authentication status.
+   *
+   * @internal This method is for testing and debugging purposes only.
+   * MCP tools do not need to call this method directly.
    */
   public getAuthStatus(): AuthStatus {
     return this.authStatus;
@@ -383,13 +468,18 @@ export class TradeRepublicApiService {
    * Subscribe to a WebSocket topic and wait for a response.
    * This is the primary method for making API calls via WebSocket.
    *
+   * Automatically handles authentication:
+   * - If not authenticated, initiates login flow and throws TwoFactorCodeRequiredException
+   * - If authenticated, ensures session is valid before making the request
+   *
    * @param topic - The WebSocket topic to subscribe to
    * @param payload - Optional payload to send with the subscription
    * @param schema - Zod schema to validate and transform the response
    * @param timeoutMs - Optional timeout in milliseconds (default: 30 seconds)
    * @returns Parsed and validated response data
+   * @throws TwoFactorCodeRequiredException if authentication is required
    */
-  public subscribeAndWait<T>(
+  public async subscribeAndWait<T>(
     topic: string,
     payload: Record<string, unknown>,
     schema: {
@@ -399,6 +489,9 @@ export class TradeRepublicApiService {
     },
     timeoutMs: number = DEFAULT_SUBSCRIPTION_TIMEOUT_MS,
   ): Promise<T> {
+    // Ensure authenticated before making any API call
+    await this.ensureAuthenticatedOrThrow();
+
     return new Promise((resolve, reject) => {
       let subscriptionId: number | null = null;
       let timeoutId: NodeJS.Timeout | null = null;
@@ -516,10 +609,13 @@ export class TradeRepublicApiService {
 
   /**
    * Disconnects from the API and cleans up resources.
+   *
+   * @internal This method is for testing and cleanup purposes only.
+   * MCP tools do not need to call this method directly.
    */
   public disconnect(): void {
     logger.api.info('Disconnecting from Trade Republic API');
-    this.ws.disconnect();
+    this.webSocketManager.disconnect();
     this.authStatus = AuthStatus.UNAUTHENTICATED;
     this.cookies = [];
     this.sessionExpiresAt = 0;
@@ -576,14 +672,14 @@ export class TradeRepublicApiService {
    * Retries on 5xx server errors and 429 rate limit.
    * Does NOT retry on 4xx client errors (except 429).
    */
-  private createRetryFetch(fetchFn: FetchFunction): FetchFunction {
+  private createRetryFetch(): typeof fetch {
     return async (
       url: string | URL | globalThis.Request,
       init?: RequestInit,
     ): Promise<Response> => {
       return pRetry(
         async () => {
-          const response = await fetchFn(url, {
+          const response = await fetch(url, {
             ...init,
             signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
           });

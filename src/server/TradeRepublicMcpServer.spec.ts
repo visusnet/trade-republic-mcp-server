@@ -29,6 +29,9 @@ function createMockApiService(): jest.Mocked<TradeRepublicApiService> {
     offMessage: jest.fn(),
     onError: jest.fn(),
     offError: jest.fn(),
+    enterTwoFactorCode: jest
+      .fn<() => Promise<{ message: string }>>()
+      .mockResolvedValue({ message: 'Authentication successful' }),
   } as unknown as jest.Mocked<TradeRepublicApiService>;
 }
 
@@ -159,8 +162,51 @@ describe('TradeRepublicMcpServer', () => {
       ]);
 
       const tools = await clientWithApi.listTools({});
-      // 2 portfolio + 7 market data + 1 market event + 2 technical analysis + 3 external data + 2 risk management + 4 execution = 21 total
-      expect(tools.tools).toHaveLength(21);
+      // 1 auth + 2 portfolio + 7 market data + 1 market event + 2 technical analysis + 3 external data + 2 risk management + 4 execution = 22 total
+      expect(tools.tools).toHaveLength(22);
+    });
+  });
+
+  describe('Auth Tools', () => {
+    it('should register auth tools when apiService is provided', async () => {
+      const mockApiService = createMockApiService();
+      const serverWithApi = new TradeRepublicMcpServer(mockApiService);
+      const mcpServerWithApi = serverWithApi.getMcpServer();
+
+      const clientWithApi = new Client(
+        { name: 'test-client', version: '1.0.0' },
+        { capabilities: {} },
+      );
+      const [clientTransport, serverTransport] =
+        InMemoryTransport.createLinkedPair();
+      await Promise.all([
+        clientWithApi.connect(clientTransport),
+        mcpServerWithApi.connect(serverTransport),
+      ]);
+
+      const tools = await clientWithApi.listTools({});
+      const toolNames = tools.tools.map((t) => t.name);
+      expect(toolNames).toContain('enter_two_factor_code');
+    });
+
+    it('should not register auth tools when no apiService provided', async () => {
+      const serverWithoutApi = new TradeRepublicMcpServer();
+      const mcpServer = serverWithoutApi.getMcpServer();
+
+      const testClient = new Client(
+        { name: 'test-client', version: '1.0.0' },
+        { capabilities: {} },
+      );
+      const [clientTransport, serverTransport] =
+        InMemoryTransport.createLinkedPair();
+      await Promise.all([
+        testClient.connect(clientTransport),
+        mcpServer.connect(serverTransport),
+      ]);
+
+      const tools = await testClient.listTools({});
+      const toolNames = tools.tools.map((t) => t.name);
+      expect(toolNames).not.toContain('enter_two_factor_code');
     });
   });
 

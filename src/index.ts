@@ -1,9 +1,28 @@
 #!/usr/bin/env node
 import { config } from 'dotenv';
+import { logger } from './logger';
 import { TradeRepublicMcpServer } from './server/TradeRepublicMcpServer.js';
+import { TradeRepublicApiService } from './server/services/TradeRepublicApiService.js';
+import { TradeRepublicCredentials } from './server/services/TradeRepublicCredentials.js';
 
-config();
+config({ quiet: true }); // Load .env file
 
-const server = new TradeRepublicMcpServer();
-const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
-server.listen(port);
+function main(): void {
+  const phoneNumber = process.env.TRADE_REPUBLIC_PHONE_NUMBER;
+  const pin = process.env.TRADE_REPUBLIC_PIN;
+
+  if (!phoneNumber || !pin) {
+    logger.server.error(
+      'TRADE_REPUBLIC_PHONE_NUMBER and TRADE_REPUBLIC_PIN environment variables must be set',
+    );
+    process.exit(1);
+  }
+
+  const credentials = new TradeRepublicCredentials(phoneNumber, pin);
+  const apiService = new TradeRepublicApiService(credentials);
+  const server = new TradeRepublicMcpServer(apiService);
+  const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+  server.listen(port);
+}
+
+main();

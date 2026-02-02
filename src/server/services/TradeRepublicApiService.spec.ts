@@ -10,107 +10,30 @@ import {
 import { EventEmitter } from 'events';
 
 import { mockLogger } from '@test/loggerMock';
-import type { CryptoManager } from './TradeRepublicApiService.crypto';
-import type { CredentialsInput } from './TradeRepublicApiService.request';
-import {
-  AuthStatus,
-  ConnectionStatus,
-  type FetchFunction,
-  HTTP_TIMEOUT_MS,
-  type KeyPair,
-  type SignedPayload,
-} from './TradeRepublicApiService.types';
-import type { WebSocketManager } from './TradeRepublicApiService.websocket';
 
 const logger = mockLogger();
 jest.mock('../../logger', () => ({
   logger,
 }));
+jest.mock('./TradeRepublicApiService.crypto');
+jest.mock('./TradeRepublicApiService.websocket');
 
-import { TradeRepublicApiService } from './TradeRepublicApiService';
+import { CryptoManager } from './TradeRepublicApiService.crypto';
 import {
+  AuthStatus,
+  ConnectionStatus,
+  HTTP_TIMEOUT_MS,
   MESSAGE_CODE,
   TradeRepublicError,
+  TwoFactorCodeRequiredException,
+  type KeyPair,
 } from './TradeRepublicApiService.types';
+import { WebSocketManager } from './TradeRepublicApiService.websocket';
+import { TradeRepublicCredentials } from './TradeRepublicCredentials';
+import { TradeRepublicApiService } from './TradeRepublicApiService';
 
-/**
- * Creates a mock CryptoManager for testing.
- */
-function createMockCryptoManager(): jest.Mocked<CryptoManager> {
-  const mockKeyPair: KeyPair = {
-    privateKeyPem:
-      '-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----',
-    publicKeyPem: '-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----',
-  };
-
-  return {
-    generateKeyPair: jest
-      .fn<() => Promise<KeyPair>>()
-      .mockResolvedValue(mockKeyPair),
-    saveKeyPair: jest
-      .fn<(keyPair: KeyPair) => Promise<void>>()
-      .mockResolvedValue(undefined),
-    loadKeyPair: jest
-      .fn<() => Promise<KeyPair | null>>()
-      .mockResolvedValue(null),
-    hasStoredKeyPair: jest
-      .fn<() => Promise<boolean>>()
-      .mockResolvedValue(false),
-    sign: jest
-      .fn<(message: string, privateKey: string) => string>()
-      .mockReturnValue('mock-signature'),
-    createSignedPayload: jest
-      .fn<(data: object, privateKeyPem: string) => SignedPayload>()
-      .mockReturnValue({
-        timestamp: new Date().toISOString(),
-        data: {},
-        signature: 'mock-signature',
-      }),
-    getPublicKeyBase64: jest
-      .fn<(publicKey: string) => string>()
-      .mockReturnValue('bW9jay1wdWJsaWMta2V5'),
-  } as unknown as jest.Mocked<CryptoManager>;
-}
-
-/**
- * Creates a mock WebSocketManager for testing.
- */
-function createMockWebSocketManager(): jest.Mocked<WebSocketManager> &
-  EventEmitter {
-  const emitter = new EventEmitter();
-
-  const mock = {
-    connect: jest
-      .fn<(token: string) => Promise<void>>()
-      .mockResolvedValue(undefined),
-    disconnect: jest.fn<() => void>(),
-    getStatus: jest
-      .fn<() => ConnectionStatus>()
-      .mockReturnValue(ConnectionStatus.DISCONNECTED),
-    subscribe: jest
-      .fn<(topic: string, payload?: object) => number>()
-      .mockReturnValue(1),
-    unsubscribe: jest.fn<(id: number) => void>(),
-    on: jest.fn((event: string, listener: (...args: unknown[]) => void) => {
-      emitter.on(event, listener);
-      return mock;
-    }),
-    removeAllListeners: jest.fn(() => {
-      emitter.removeAllListeners();
-      return mock;
-    }),
-    emit: (event: string, ...args: unknown[]) => emitter.emit(event, ...args),
-  } as unknown as jest.Mocked<WebSocketManager> & EventEmitter;
-
-  return mock;
-}
-
-/**
- * Creates a mock fetch function for testing.
- */
-function createMockFetch(): jest.MockedFunction<FetchFunction> {
-  return jest.fn<FetchFunction>();
-}
+// Store original fetch
+const originalFetch = global.fetch;
 
 /**
  * Creates a mock Response with Set-Cookie headers for cookie-based auth.
@@ -164,9 +87,7 @@ function createMockLoginResponse(): Partial<Response> {
  * Helper to setup mock fetch for successful connect flow.
  * Returns the mockFetch configured for login + 2FA success.
  */
-function setupConnectMocks(
-  mockFetch: jest.MockedFunction<FetchFunction>,
-): void {
+function setupConnectMocks(mockFetch: jest.MockedFunction<typeof fetch>): void {
   let callCount = 0;
   mockFetch.mockImplementation(() => {
     callCount++;
@@ -184,63 +105,109 @@ function setupConnectMocks(
 }
 
 describe('TradeRepublicApiService', () => {
-  let mockCrypto: jest.Mocked<CryptoManager>;
-  let mockWs: jest.Mocked<WebSocketManager> & EventEmitter;
-  let mockFetch: jest.MockedFunction<FetchFunction>;
+  let mockCryptoManagerInstance: jest.Mocked<CryptoManager>;
+  let mockWebSocketManagerInstance: jest.Mocked<WebSocketManager> &
+    EventEmitter;
+  let mockFetch: jest.MockedFunction<typeof fetch>;
   let service: TradeRepublicApiService;
 
-  const testCredentials: CredentialsInput = {
-    phoneNumber: '+491234567890',
-    pin: '1234',
+  const testCredentials = new TradeRepublicCredentials('+491234567890', '1234');
+
+  const mockKeyPair: KeyPair = {
+    privateKeyPem:
+      '-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----',
+    publicKeyPem: '-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----',
   };
 
   beforeEach(() => {
-    mockCrypto = createMockCryptoManager();
-    mockWs = createMockWebSocketManager();
-    mockFetch = createMockFetch();
-    service = new TradeRepublicApiService(
-      testCredentials,
-      mockCrypto,
-      mockWs,
-      mockFetch,
+    // Setup mock CryptoManager
+    const MockedCryptoManager = jest.mocked(CryptoManager);
+    MockedCryptoManager.mockClear();
+
+    mockCryptoManagerInstance = {
+      generateKeyPair: jest
+        .fn<() => Promise<KeyPair>>()
+        .mockResolvedValue(mockKeyPair),
+      saveKeyPair: jest
+        .fn<(keyPair: KeyPair) => Promise<void>>()
+        .mockResolvedValue(undefined),
+      loadKeyPair: jest
+        .fn<() => Promise<KeyPair | null>>()
+        .mockResolvedValue(null),
+      hasStoredKeyPair: jest
+        .fn<() => Promise<boolean>>()
+        .mockResolvedValue(false),
+      sign: jest
+        .fn<(message: string, privateKey: string) => string>()
+        .mockReturnValue('mock-signature'),
+      createSignedPayload: jest.fn().mockReturnValue({
+        timestamp: new Date().toISOString(),
+        data: {},
+        signature: 'mock-signature',
+      }),
+      getPublicKeyBase64: jest
+        .fn<(publicKey: string) => string>()
+        .mockReturnValue('bW9jay1wdWJsaWMta2V5'),
+    } as unknown as jest.Mocked<CryptoManager>;
+
+    MockedCryptoManager.mockImplementation(() => mockCryptoManagerInstance);
+
+    // Setup mock WebSocketManager with EventEmitter functionality
+    const MockedWebSocketManager = jest.mocked(WebSocketManager);
+    MockedWebSocketManager.mockClear();
+
+    const emitter = new EventEmitter();
+    mockWebSocketManagerInstance = {
+      connect: jest
+        .fn<(token: string) => Promise<void>>()
+        .mockResolvedValue(undefined),
+      disconnect: jest.fn<() => void>(),
+      getStatus: jest
+        .fn<() => ConnectionStatus>()
+        .mockReturnValue(ConnectionStatus.DISCONNECTED),
+      subscribe: jest
+        .fn<(topic: string, payload?: object) => number>()
+        .mockReturnValue(1),
+      unsubscribe: jest.fn<(id: number) => void>(),
+      on: jest.fn((event: string, listener: (...args: unknown[]) => void) => {
+        emitter.on(event, listener);
+        return mockWebSocketManagerInstance;
+      }),
+      removeAllListeners: jest.fn(() => {
+        emitter.removeAllListeners();
+        return mockWebSocketManagerInstance;
+      }),
+      emit: (event: string, ...args: unknown[]) => emitter.emit(event, ...args),
+    } as unknown as jest.Mocked<WebSocketManager> & EventEmitter;
+
+    MockedWebSocketManager.mockImplementation(
+      () => mockWebSocketManagerInstance,
     );
+
+    // Setup mock fetch
+    mockFetch = jest.fn() as jest.MockedFunction<typeof fetch>;
+    global.fetch = mockFetch;
+
+    service = new TradeRepublicApiService(testCredentials);
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
   });
 
   describe('constructor', () => {
-    it('should throw on invalid phone number format', () => {
-      expect(
-        () =>
-          new TradeRepublicApiService(
-            { phoneNumber: 'invalid', pin: '1234' },
-            mockCrypto,
-            mockWs,
-            mockFetch,
-          ),
-      ).toThrow('Invalid credentials');
-    });
-
-    it('should throw on invalid PIN format', () => {
-      expect(
-        () =>
-          new TradeRepublicApiService(
-            { phoneNumber: '+491234567890', pin: '12' },
-            mockCrypto,
-            mockWs,
-            mockFetch,
-          ),
-      ).toThrow('Invalid credentials');
-    });
-
     it('should accept valid credentials', () => {
-      expect(
-        () =>
-          new TradeRepublicApiService(
-            testCredentials,
-            mockCrypto,
-            mockWs,
-            mockFetch,
-          ),
-      ).not.toThrow();
+      expect(() => new TradeRepublicApiService(testCredentials)).not.toThrow();
+    });
+
+    it('should instantiate CryptoManager internally', () => {
+      const MockedCryptoManager = jest.mocked(CryptoManager);
+      expect(MockedCryptoManager).toHaveBeenCalled();
+    });
+
+    it('should instantiate WebSocketManager internally', () => {
+      const MockedWebSocketManager = jest.mocked(WebSocketManager);
+      expect(MockedWebSocketManager).toHaveBeenCalled();
     });
   });
 
@@ -270,29 +237,29 @@ describe('TradeRepublicApiService', () => {
         publicKeyPem:
           '-----BEGIN PUBLIC KEY-----\nexisting\n-----END PUBLIC KEY-----',
       };
-      mockCrypto.hasStoredKeyPair.mockResolvedValue(true);
-      mockCrypto.loadKeyPair.mockResolvedValue(existingKeyPair);
+      mockCryptoManagerInstance.hasStoredKeyPair.mockResolvedValue(true);
+      mockCryptoManagerInstance.loadKeyPair.mockResolvedValue(existingKeyPair);
       setupConnectMocks(mockFetch);
 
       const connectPromise = service.connect('5678');
       await jest.advanceTimersByTimeAsync(2000);
       await connectPromise;
 
-      expect(mockCrypto.hasStoredKeyPair).toHaveBeenCalled();
-      expect(mockCrypto.loadKeyPair).toHaveBeenCalled();
-      expect(mockCrypto.generateKeyPair).not.toHaveBeenCalled();
+      expect(mockCryptoManagerInstance.hasStoredKeyPair).toHaveBeenCalled();
+      expect(mockCryptoManagerInstance.loadKeyPair).toHaveBeenCalled();
+      expect(mockCryptoManagerInstance.generateKeyPair).not.toHaveBeenCalled();
     });
 
     it('should generate new key pair if none stored', async () => {
-      mockCrypto.hasStoredKeyPair.mockResolvedValue(false);
+      mockCryptoManagerInstance.hasStoredKeyPair.mockResolvedValue(false);
       setupConnectMocks(mockFetch);
 
       const connectPromise = service.connect('5678');
       await jest.advanceTimersByTimeAsync(2000);
       await connectPromise;
 
-      expect(mockCrypto.generateKeyPair).toHaveBeenCalled();
-      expect(mockCrypto.saveKeyPair).toHaveBeenCalled();
+      expect(mockCryptoManagerInstance.generateKeyPair).toHaveBeenCalled();
+      expect(mockCryptoManagerInstance.saveKeyPair).toHaveBeenCalled();
     });
 
     it('should throw on invalid 2FA code format', async () => {
@@ -465,7 +432,7 @@ describe('TradeRepublicApiService', () => {
       await jest.advanceTimersByTimeAsync(2000);
       await connectPromise;
 
-      expect(mockWs.connect).toHaveBeenCalledWith(
+      expect(mockWebSocketManagerInstance.connect).toHaveBeenCalledWith(
         'session=test-session-cookie',
       );
     });
@@ -541,7 +508,9 @@ describe('TradeRepublicApiService', () => {
       await jest.advanceTimersByTimeAsync(2000);
       await connectPromise;
 
-      expect(mockWs.connect).toHaveBeenCalledWith('session=fallback-cookie');
+      expect(mockWebSocketManagerInstance.connect).toHaveBeenCalledWith(
+        'session=fallback-cookie',
+      );
     });
 
     it('should parse multiple cookies from comma-separated set-cookie header', async () => {
@@ -567,7 +536,7 @@ describe('TradeRepublicApiService', () => {
       await jest.advanceTimersByTimeAsync(2000);
       await connectPromise;
 
-      expect(mockWs.connect).toHaveBeenCalledWith(
+      expect(mockWebSocketManagerInstance.connect).toHaveBeenCalledWith(
         'session=cookie1; refresh=cookie2',
       );
     });
@@ -591,7 +560,9 @@ describe('TradeRepublicApiService', () => {
       await jest.advanceTimersByTimeAsync(2000);
       await connectPromise;
 
-      expect(mockWs.connect).toHaveBeenCalledWith('session=valid-cookie');
+      expect(mockWebSocketManagerInstance.connect).toHaveBeenCalledWith(
+        'session=valid-cookie',
+      );
     });
 
     it('should ignore cookies with empty name', async () => {
@@ -613,7 +584,9 @@ describe('TradeRepublicApiService', () => {
       await jest.advanceTimersByTimeAsync(2000);
       await connectPromise;
 
-      expect(mockWs.connect).toHaveBeenCalledWith('session=valid-cookie');
+      expect(mockWebSocketManagerInstance.connect).toHaveBeenCalledWith(
+        'session=valid-cookie',
+      );
     });
 
     it('should parse cookie with expires attribute', async () => {
@@ -656,7 +629,9 @@ describe('TradeRepublicApiService', () => {
       await jest.advanceTimersByTimeAsync(2000);
       await connectPromise;
 
-      expect(mockWs.connect).toHaveBeenCalledWith('session=test-cookie');
+      expect(mockWebSocketManagerInstance.connect).toHaveBeenCalledWith(
+        'session=test-cookie',
+      );
     });
 
     it('should connect WebSocket after successful auth', async () => {
@@ -666,7 +641,7 @@ describe('TradeRepublicApiService', () => {
       await jest.advanceTimersByTimeAsync(2000);
       await connectPromise;
 
-      expect(mockWs.connect).toHaveBeenCalled();
+      expect(mockWebSocketManagerInstance.connect).toHaveBeenCalled();
     });
 
     it('should log initialization status', async () => {
@@ -749,12 +724,7 @@ describe('TradeRepublicApiService', () => {
     });
 
     it('should throw if service not initialized when validating session', async () => {
-      const freshService = new TradeRepublicApiService(
-        testCredentials,
-        mockCrypto,
-        mockWs,
-        mockFetch,
-      );
+      const freshService = new TradeRepublicApiService(testCredentials);
 
       await expect(freshService.validateSession()).rejects.toThrow(
         'Service not initialized',
@@ -869,12 +839,7 @@ describe('TradeRepublicApiService', () => {
     });
 
     it('should throw if service not initialized', async () => {
-      const freshService = new TradeRepublicApiService(
-        testCredentials,
-        mockCrypto,
-        mockWs,
-        mockFetch,
-      );
+      const freshService = new TradeRepublicApiService(testCredentials);
 
       await expect(freshService.validateSession()).rejects.toThrow(
         'Service not initialized',
@@ -1060,7 +1025,7 @@ describe('TradeRepublicApiService', () => {
     it('should unsubscribe from a topic', () => {
       service.unsubscribe(42);
 
-      expect(mockWs.unsubscribe).toHaveBeenCalledWith(42);
+      expect(mockWebSocketManagerInstance.unsubscribe).toHaveBeenCalledWith(42);
     });
   });
 
@@ -1078,7 +1043,7 @@ describe('TradeRepublicApiService', () => {
     });
 
     it('should subscribe to a topic', () => {
-      mockWs.subscribe.mockReturnValue(42);
+      mockWebSocketManagerInstance.subscribe.mockReturnValue(42);
 
       const subId = service.subscribe({
         topic: 'ticker',
@@ -1086,18 +1051,24 @@ describe('TradeRepublicApiService', () => {
       });
 
       expect(subId).toBe(42);
-      expect(mockWs.subscribe).toHaveBeenCalledWith('ticker', {
-        isin: 'DE0007164600',
-      });
+      expect(mockWebSocketManagerInstance.subscribe).toHaveBeenCalledWith(
+        'ticker',
+        {
+          isin: 'DE0007164600',
+        },
+      );
     });
 
     it('should subscribe without payload', () => {
-      mockWs.subscribe.mockReturnValue(43);
+      mockWebSocketManagerInstance.subscribe.mockReturnValue(43);
 
       const subId = service.subscribe({ topic: 'portfolio' });
 
       expect(subId).toBe(43);
-      expect(mockWs.subscribe).toHaveBeenCalledWith('portfolio', undefined);
+      expect(mockWebSocketManagerInstance.subscribe).toHaveBeenCalledWith(
+        'portfolio',
+        undefined,
+      );
     });
 
     it('should throw on invalid subscribe input', () => {
@@ -1135,7 +1106,7 @@ describe('TradeRepublicApiService', () => {
     });
 
     it('should subscribe and resolve with parsed data on success', async () => {
-      mockWs.subscribe.mockReturnValue(42);
+      mockWebSocketManagerInstance.subscribe.mockReturnValue(42);
 
       const promise = service.subscribeAndWait(
         'testTopic',
@@ -1143,21 +1114,30 @@ describe('TradeRepublicApiService', () => {
         mockSchema,
       );
 
+      // Allow async auth check to complete before emitting message
+      await jest.advanceTimersByTimeAsync(0);
+
       // Simulate successful response
       const message = { id: 42, code: MESSAGE_CODE.A, payload: { value: 123 } };
-      mockWs.emit('message', message);
+      mockWebSocketManagerInstance.emit('message', message);
 
       const result = await promise;
       expect(result).toEqual({ value: 123 });
-      expect(mockWs.subscribe).toHaveBeenCalledWith('testTopic', {
-        param: 'value',
-      });
+      expect(mockWebSocketManagerInstance.subscribe).toHaveBeenCalledWith(
+        'testTopic',
+        {
+          param: 'value',
+        },
+      );
     });
 
     it('should reject with error on API error response', async () => {
-      mockWs.subscribe.mockReturnValue(43);
+      mockWebSocketManagerInstance.subscribe.mockReturnValue(43);
 
       const promise = service.subscribeAndWait('testTopic', {}, mockSchema);
+
+      // Allow async auth check to complete before emitting message
+      await jest.advanceTimersByTimeAsync(0);
 
       // Simulate error response
       const message = {
@@ -1165,28 +1145,34 @@ describe('TradeRepublicApiService', () => {
         code: MESSAGE_CODE.E,
         payload: { message: 'Test error' },
       };
-      mockWs.emit('message', message);
+      mockWebSocketManagerInstance.emit('message', message);
 
       await expect(promise).rejects.toThrow(TradeRepublicError);
       await expect(promise).rejects.toThrow('Test error');
     });
 
     it('should reject with default error message if error payload has no message', async () => {
-      mockWs.subscribe.mockReturnValue(44);
+      mockWebSocketManagerInstance.subscribe.mockReturnValue(44);
 
       const promise = service.subscribeAndWait('testTopic', {}, mockSchema);
 
+      // Allow async auth check to complete before emitting message
+      await jest.advanceTimersByTimeAsync(0);
+
       // Simulate error response without message
       const message = { id: 44, code: MESSAGE_CODE.E, payload: {} };
-      mockWs.emit('message', message);
+      mockWebSocketManagerInstance.emit('message', message);
 
       await expect(promise).rejects.toThrow('API error');
     });
 
     it('should reject with error on schema validation failure', async () => {
-      mockWs.subscribe.mockReturnValue(45);
+      mockWebSocketManagerInstance.subscribe.mockReturnValue(45);
 
       const promise = service.subscribeAndWait('testTopic', {}, mockSchema);
+
+      // Allow async auth check to complete before emitting message
+      await jest.advanceTimersByTimeAsync(0);
 
       // Simulate response with invalid data
       const message = {
@@ -1194,7 +1180,7 @@ describe('TradeRepublicApiService', () => {
         code: MESSAGE_CODE.A,
         payload: { invalid: 'data' },
       };
-      mockWs.emit('message', message);
+      mockWebSocketManagerInstance.emit('message', message);
 
       await expect(promise).rejects.toThrow(
         'Invalid testTopic response format',
@@ -1202,7 +1188,7 @@ describe('TradeRepublicApiService', () => {
     });
 
     it('should reject on timeout', async () => {
-      mockWs.subscribe.mockReturnValue(46);
+      mockWebSocketManagerInstance.subscribe.mockReturnValue(46);
 
       const promise = service
         .subscribeAndWait('testTopic', {}, mockSchema, 1000) // 1 second timeout
@@ -1217,21 +1203,27 @@ describe('TradeRepublicApiService', () => {
     });
 
     it('should reject on WebSocket error', async () => {
-      mockWs.subscribe.mockReturnValue(47);
+      mockWebSocketManagerInstance.subscribe.mockReturnValue(47);
 
       const promise = service.subscribeAndWait('testTopic', {}, mockSchema);
 
+      // Allow async auth check to complete before emitting message
+      await jest.advanceTimersByTimeAsync(0);
+
       // Simulate error event
       const error = new Error('WebSocket connection lost');
-      mockWs.emit('error', error);
+      mockWebSocketManagerInstance.emit('error', error);
 
       await expect(promise).rejects.toThrow('WebSocket connection lost');
     });
 
     it('should reject on WebSocket error message for matching subscription', async () => {
-      mockWs.subscribe.mockReturnValue(48);
+      mockWebSocketManagerInstance.subscribe.mockReturnValue(48);
 
       const promise = service.subscribeAndWait('testTopic', {}, mockSchema);
+
+      // Allow async auth check to complete before emitting message
+      await jest.advanceTimersByTimeAsync(0);
 
       // Simulate error message
       const errorMessage = {
@@ -1239,15 +1231,18 @@ describe('TradeRepublicApiService', () => {
         code: MESSAGE_CODE.E,
         payload: { message: 'Subscription error' },
       };
-      mockWs.emit('error', errorMessage);
+      mockWebSocketManagerInstance.emit('error', errorMessage);
 
       await expect(promise).rejects.toThrow('Subscription error');
     });
 
     it('should ignore messages for other subscriptions', async () => {
-      mockWs.subscribe.mockReturnValue(49);
+      mockWebSocketManagerInstance.subscribe.mockReturnValue(49);
 
       const promise = service.subscribeAndWait('testTopic', {}, mockSchema);
+
+      // Allow async auth check to complete before emitting message
+      await jest.advanceTimersByTimeAsync(0);
 
       // Simulate message for different subscription
       const otherMessage = {
@@ -1255,7 +1250,7 @@ describe('TradeRepublicApiService', () => {
         code: MESSAGE_CODE.A,
         payload: { value: 999 },
       };
-      mockWs.emit('message', otherMessage);
+      mockWebSocketManagerInstance.emit('message', otherMessage);
 
       // Our subscription should still be pending
       // Send the correct message
@@ -1264,14 +1259,14 @@ describe('TradeRepublicApiService', () => {
         code: MESSAGE_CODE.A,
         payload: { value: 42 },
       };
-      mockWs.emit('message', ourMessage);
+      mockWebSocketManagerInstance.emit('message', ourMessage);
 
       const result = await promise;
       expect(result).toEqual({ value: 42 });
     });
 
     it('should reject if subscribe throws', async () => {
-      mockWs.subscribe.mockImplementation(() => {
+      mockWebSocketManagerInstance.subscribe.mockImplementation(() => {
         throw new Error('Subscribe failed');
       });
 
@@ -1281,17 +1276,257 @@ describe('TradeRepublicApiService', () => {
     });
 
     it('should unsubscribe on cleanup', async () => {
-      mockWs.subscribe.mockReturnValue(50);
+      mockWebSocketManagerInstance.subscribe.mockReturnValue(50);
 
       const promise = service.subscribeAndWait('testTopic', {}, mockSchema);
 
+      // Allow async auth check to complete before emitting message
+      await jest.advanceTimersByTimeAsync(0);
+
       // Simulate successful response
       const message = { id: 50, code: MESSAGE_CODE.A, payload: { value: 123 } };
-      mockWs.emit('message', message);
+      mockWebSocketManagerInstance.emit('message', message);
 
       await promise;
 
-      expect(mockWs.unsubscribe).toHaveBeenCalledWith(50);
+      expect(mockWebSocketManagerInstance.unsubscribe).toHaveBeenCalledWith(50);
+    });
+  });
+
+  describe('subscribeAndWait lazy auth', () => {
+    const mockSchema = {
+      safeParse: (data: unknown) => ({
+        success: true as const,
+        data: data as { value: number },
+      }),
+    };
+
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('should throw TwoFactorCodeRequiredException when not authenticated', async () => {
+      // Setup mocks for login request (no 2FA)
+      mockFetch.mockResolvedValueOnce(createMockLoginResponse() as Response);
+
+      // Catch the error inline to handle the promise rejection properly
+      let caughtError: unknown = null;
+      const promise = service
+        .subscribeAndWait('testTopic', {}, mockSchema)
+        .catch((e: unknown) => {
+          caughtError = e;
+        });
+
+      // Advance timers to allow async operations to complete
+      await jest.advanceTimersByTimeAsync(3000);
+      await promise;
+
+      expect(caughtError).toBeInstanceOf(TwoFactorCodeRequiredException);
+    });
+
+    it('should include masked phone number in TwoFactorCodeRequiredException', async () => {
+      // Setup mocks for login request
+      mockFetch.mockResolvedValueOnce(createMockLoginResponse() as Response);
+
+      let caughtError: unknown = null;
+      const promise = service
+        .subscribeAndWait('testTopic', {}, mockSchema)
+        .catch((e: unknown) => {
+          caughtError = e;
+        });
+
+      // Advance timers to allow async operations to complete
+      await jest.advanceTimersByTimeAsync(3000);
+      await promise;
+
+      expect(caughtError).toBeInstanceOf(TwoFactorCodeRequiredException);
+      expect((caughtError as TwoFactorCodeRequiredException).message).toContain(
+        '+49123***90',
+      );
+    });
+
+    it('should include error message in TwoFactorCodeRequiredException', async () => {
+      // Setup mocks for login request
+      mockFetch.mockResolvedValueOnce(createMockLoginResponse() as Response);
+
+      let caughtError: unknown = null;
+      const promise = service
+        .subscribeAndWait('testTopic', {}, mockSchema)
+        .catch((e: unknown) => {
+          caughtError = e;
+        });
+
+      // Advance timers to allow async operations to complete
+      await jest.advanceTimersByTimeAsync(3000);
+      await promise;
+
+      expect(caughtError).toBeInstanceOf(TwoFactorCodeRequiredException);
+      expect((caughtError as TwoFactorCodeRequiredException).message).toContain(
+        '2FA code required',
+      );
+    });
+
+    it('should throw TwoFactorCodeRequiredException when awaiting 2FA', async () => {
+      // Setup mocks: login succeeds but no 2FA yet
+      mockFetch.mockResolvedValueOnce(createMockLoginResponse() as Response);
+
+      // First call initiates login and throws TwoFactorCodeRequiredException
+      let error1: unknown = null;
+      const promise1 = service
+        .subscribeAndWait('testTopic', {}, mockSchema)
+        .catch((e: unknown) => {
+          error1 = e;
+        });
+      await jest.advanceTimersByTimeAsync(3000);
+      await promise1;
+
+      expect(error1).toBeInstanceOf(TwoFactorCodeRequiredException);
+
+      // Service is now in AWAITING_2FA state
+      expect(service.getAuthStatus()).toBe(AuthStatus.AWAITING_2FA);
+
+      // Second call should also throw TwoFactorCodeRequiredException
+      let error2: unknown = null;
+      const promise2 = service
+        .subscribeAndWait('testTopic', {}, mockSchema)
+        .catch((e: unknown) => {
+          error2 = e;
+        });
+      await jest.advanceTimersByTimeAsync(3000);
+      await promise2;
+
+      expect(error2).toBeInstanceOf(TwoFactorCodeRequiredException);
+    });
+
+    it('should proceed normally when already authenticated', async () => {
+      // First, authenticate the service
+      setupConnectMocks(mockFetch);
+      const connectPromise = service.connect('5678');
+      await jest.advanceTimersByTimeAsync(3000);
+      await connectPromise;
+
+      // Now subscribeAndWait should work normally
+      mockWebSocketManagerInstance.subscribe.mockReturnValue(99);
+
+      const promise = service.subscribeAndWait('testTopic', {}, mockSchema);
+
+      // Allow async auth check to complete
+      await jest.advanceTimersByTimeAsync(0);
+
+      // Simulate successful response
+      const message = {
+        id: 99,
+        code: MESSAGE_CODE.A,
+        payload: { value: 42 },
+      };
+      mockWebSocketManagerInstance.emit('message', message);
+
+      const result = await promise;
+      expect(result).toEqual({ value: 42 });
+    });
+  });
+
+  describe('enterTwoFactorCode', () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('should return success message when 2FA verification succeeds', async () => {
+      // First, trigger login to get to AWAITING_2FA state
+      mockFetch.mockResolvedValueOnce(createMockLoginResponse() as Response);
+      const subscribePromise = service
+        .subscribeAndWait(
+          'testTopic',
+          {},
+          { safeParse: () => ({ success: true, data: {} }) },
+        )
+        .catch(() => {});
+      await jest.advanceTimersByTimeAsync(3000);
+      await subscribePromise;
+
+      expect(service.getAuthStatus()).toBe(AuthStatus.AWAITING_2FA);
+
+      // Now enter 2FA code - should succeed
+      mockFetch.mockResolvedValueOnce(
+        createMock2FAResponse([
+          'session=test-session-cookie; Domain=traderepublic.com; Path=/',
+        ]) as Response,
+      );
+
+      const resultPromise = service.enterTwoFactorCode({ code: '1234' });
+      await jest.advanceTimersByTimeAsync(3000);
+      const result = await resultPromise;
+
+      expect(result.message).toBe('Authentication successful');
+      expect(service.getAuthStatus()).toBe(AuthStatus.AUTHENTICATED);
+    });
+
+    it('should return error message when 2FA verification fails', async () => {
+      // First, trigger login to get to AWAITING_2FA state
+      mockFetch.mockResolvedValueOnce(createMockLoginResponse() as Response);
+      const subscribePromise = service
+        .subscribeAndWait(
+          'testTopic',
+          {},
+          { safeParse: () => ({ success: true, data: {} }) },
+        )
+        .catch(() => {});
+      await jest.advanceTimersByTimeAsync(3000);
+      await subscribePromise;
+
+      expect(service.getAuthStatus()).toBe(AuthStatus.AWAITING_2FA);
+
+      // Now enter wrong 2FA code - should fail
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        json: () => Promise.resolve({ message: 'Invalid 2FA code' }),
+      } as Response);
+
+      const resultPromise = service.enterTwoFactorCode({ code: '0000' });
+      await jest.advanceTimersByTimeAsync(3000);
+      const result = await resultPromise;
+
+      expect(result.message).toBe('Invalid 2FA code');
+      expect(service.getAuthStatus()).toBe(AuthStatus.AWAITING_2FA);
+    });
+
+    it('should return error message when not in AWAITING_2FA state', async () => {
+      // Service is UNAUTHENTICATED, not AWAITING_2FA
+      const result = await service.enterTwoFactorCode({ code: '1234' });
+
+      expect(result.message).toBe(
+        'Not awaiting 2FA verification. Initiate login first.',
+      );
+    });
+
+    it('should return error message when code is empty', async () => {
+      const result = await service.enterTwoFactorCode({ code: '' });
+
+      expect(result.message).toBe('Code is required');
+    });
+
+    it('should return error message when already authenticated', async () => {
+      // Authenticate first
+      setupConnectMocks(mockFetch);
+      const connectPromise = service.connect('5678');
+      await jest.advanceTimersByTimeAsync(3000);
+      await connectPromise;
+
+      expect(service.getAuthStatus()).toBe(AuthStatus.AUTHENTICATED);
+
+      // Try to enter 2FA code when already authenticated
+      const result = await service.enterTwoFactorCode({ code: '1234' });
+
+      expect(result.message).toBe('Already authenticated');
     });
   });
 
@@ -1305,7 +1540,7 @@ describe('TradeRepublicApiService', () => {
 
       service.disconnect();
 
-      expect(mockWs.disconnect).toHaveBeenCalled();
+      expect(mockWebSocketManagerInstance.disconnect).toHaveBeenCalled();
       expect(service.getAuthStatus()).toBe(AuthStatus.UNAUTHENTICATED);
       jest.useRealTimers();
     });
@@ -1323,7 +1558,7 @@ describe('TradeRepublicApiService', () => {
       service.onError(errorHandler);
 
       const error = new Error('WebSocket error');
-      mockWs.emit('error', error);
+      mockWebSocketManagerInstance.emit('error', error);
 
       expect(errorHandler).toHaveBeenCalledWith(error);
       jest.useRealTimers();
@@ -1340,7 +1575,7 @@ describe('TradeRepublicApiService', () => {
       service.onMessage(messageHandler);
 
       const message = { id: 1, code: 'A', payload: { price: 100 } };
-      mockWs.emit('message', message);
+      mockWebSocketManagerInstance.emit('message', message);
 
       expect(messageHandler).toHaveBeenCalledWith(message);
       jest.useRealTimers();
@@ -1366,7 +1601,7 @@ describe('TradeRepublicApiService', () => {
       service.offMessage(handler);
 
       const message = { id: 1, code: 'A', payload: { test: true } };
-      mockWs.emit('message', message);
+      mockWebSocketManagerInstance.emit('message', message);
 
       expect(handler).not.toHaveBeenCalled();
       jest.useRealTimers();
@@ -1400,7 +1635,7 @@ describe('TradeRepublicApiService', () => {
       service.offError(handler);
 
       const error = new Error('Test error');
-      mockWs.emit('error', error);
+      mockWebSocketManagerInstance.emit('error', error);
 
       expect(handler).not.toHaveBeenCalled();
       jest.useRealTimers();
@@ -1425,12 +1660,7 @@ describe('TradeRepublicApiService', () => {
     beforeEach(() => {
       jest.useFakeTimers();
       // Create service with default throttle interval (1000ms) for rate limiting tests
-      service = new TradeRepublicApiService(
-        testCredentials,
-        mockCrypto,
-        mockWs,
-        mockFetch,
-      );
+      service = new TradeRepublicApiService(testCredentials);
     });
 
     afterEach(() => {
@@ -1597,12 +1827,7 @@ describe('TradeRepublicApiService', () => {
     beforeEach(() => {
       jest.useFakeTimers();
       // Create service with default throttle interval for backoff tests
-      service = new TradeRepublicApiService(
-        testCredentials,
-        mockCrypto,
-        mockWs,
-        mockFetch,
-      );
+      service = new TradeRepublicApiService(testCredentials);
     });
 
     afterEach(() => {

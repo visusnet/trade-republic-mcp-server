@@ -87,6 +87,17 @@ export class WebSocketError extends TradeRepublicError {
   }
 }
 
+/** Exception thrown when two-factor authentication is required */
+export class TwoFactorCodeRequiredException extends TradeRepublicError {
+  constructor(maskedPhoneNumber: string) {
+    super(
+      `2FA code required. A code has been sent to ${maskedPhoneNumber}. Call enter_two_factor_code with the code.`,
+      'TWO_FACTOR_REQUIRED',
+    );
+    this.name = 'TwoFactorCodeRequiredException';
+  }
+}
+
 // =============================================================================
 // Interfaces
 // =============================================================================
@@ -206,11 +217,3 @@ export interface WebSocket {
 
 /** HTTP fetch function type */
 export type FetchFunction = typeof fetch;
-
-/** File system operations interface */
-export interface FileSystem {
-  readFile(path: string): Promise<string>;
-  writeFile(path: string, data: string): Promise<void>;
-  exists(path: string): Promise<boolean>;
-  mkdir(path: string, options?: { recursive?: boolean }): Promise<void>;
-}

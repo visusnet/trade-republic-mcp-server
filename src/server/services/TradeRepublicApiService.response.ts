@@ -29,3 +29,19 @@ export const ErrorResponseSchema = z.object({
 });
 
 export type ErrorResponse = z.output<typeof ErrorResponseSchema>;
+
+/**
+ * Response schema for entering two-factor authentication code
+ */
+export const EnterTwoFactorCodeResponseSchema = z
+  .object({
+    /** Result message indicating success or failure */
+    message: z
+      .string()
+      .describe('Result message indicating success or failure'),
+  })
+  .describe('Response from entering the two-factor authentication code');
+
+export type EnterTwoFactorCodeResponse = z.output<
+  typeof EnterTwoFactorCodeResponseSchema
+>;

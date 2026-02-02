@@ -1,14 +1,4 @@
-import {
-  describe,
-  it,
-  expect,
-  jest,
-  beforeEach,
-  afterEach,
-} from '@jest/globals';
-import { promises as fs } from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
+import { describe, it, expect, jest } from '@jest/globals';
 
 import { mockLogger } from '@test/loggerMock';
 
@@ -28,13 +18,12 @@ jest.mock('undici', () => ({
 }));
 
 import {
-  createTradeRepublicApiService,
   TradeRepublicApiService,
+  TradeRepublicCredentials,
   CryptoManager,
   WebSocketManager,
   DEFAULT_CONFIG_DIR,
-  defaultFileSystem,
-  defaultWebSocketFactory,
+  TwoFactorCodeRequiredException,
   PortfolioService,
   GetPortfolioRequestSchema,
   GetCashBalanceRequestSchema,
@@ -88,7 +77,6 @@ import {
   MarketEventError,
   WaitForMarketEventRequestSchema,
   WaitForMarketEventResponseSchema,
-  type FileSystem,
 } from './index';
 
 describe('Services Index', () => {
@@ -100,6 +88,7 @@ describe('Services Index', () => {
     it('should export service classes that are constructable', () => {
       // Verify classes are functions (constructable)
       expect(typeof TradeRepublicApiService).toBe('function');
+      expect(typeof TradeRepublicCredentials).toBe('function');
       expect(typeof CryptoManager).toBe('function');
       expect(typeof WebSocketManager).toBe('function');
       expect(typeof PortfolioService).toBe('function');
@@ -142,11 +131,18 @@ describe('Services Index', () => {
 
       const orderError = new OrderServiceError('test');
       expect(orderError).toBeInstanceOf(Error);
+      expect(orderError.name).toBe('OrderServiceError');
 
       const marketEventError = new MarketEventError('test');
       expect(marketEventError).toBeInstanceOf(Error);
       expect(marketEventError.name).toBe('MarketEventError');
-      expect(orderError.name).toBe('OrderServiceError');
+
+      const twoFactorError = new TwoFactorCodeRequiredException('+49123***90');
+      expect(twoFactorError).toBeInstanceOf(Error);
+      expect(twoFactorError.name).toBe('TwoFactorCodeRequiredException');
+      expect(twoFactorError.message).toContain('2FA code required');
+      expect(twoFactorError.message).toContain('+49123***90');
+      expect(twoFactorError.code).toBe('TWO_FACTOR_REQUIRED');
     });
 
     it('should export Portfolio schemas that parse valid input', () => {
@@ -286,155 +282,6 @@ describe('Services Index', () => {
           timestamp: '2025-01-25T12:00:00.000Z',
         }).success,
       ).toBe(true);
-    });
-  });
-
-  describe('createTradeRepublicApiService', () => {
-    const testCredentials = {
-      phoneNumber: '+491234567890',
-      pin: '1234',
-    };
-
-    it('should create a TradeRepublicApiService instance', () => {
-      const service = createTradeRepublicApiService(testCredentials);
-
-      expect(service).toBeInstanceOf(TradeRepublicApiService);
-    });
-
-    it('should use custom config directory if provided', () => {
-      const customDir = '/custom/config/dir';
-      const service = createTradeRepublicApiService({
-        ...testCredentials,
-        configDir: customDir,
-      });
-
-      expect(service).toBeInstanceOf(TradeRepublicApiService);
-    });
-
-    it('should use default config directory based on home dir', () => {
-      const service = createTradeRepublicApiService(testCredentials);
-      // Just verify it works with defaults
-      expect(service).toBeInstanceOf(TradeRepublicApiService);
-    });
-
-    it('should use custom file system if provided', () => {
-      const customFileSystem: FileSystem = {
-        readFile: jest.fn<() => Promise<string>>(),
-        writeFile: jest.fn<() => Promise<void>>(),
-        exists: jest.fn<() => Promise<boolean>>(),
-        mkdir: jest.fn<() => Promise<void>>(),
-      };
-
-      const service = createTradeRepublicApiService({
-        ...testCredentials,
-        fileSystem: customFileSystem,
-      });
-
-      expect(service).toBeInstanceOf(TradeRepublicApiService);
-    });
-
-    it('should use custom fetch function if provided', () => {
-      const customFetch = jest.fn() as unknown as typeof fetch;
-
-      const service = createTradeRepublicApiService({
-        ...testCredentials,
-        fetchFn: customFetch,
-      });
-
-      expect(service).toBeInstanceOf(TradeRepublicApiService);
-    });
-  });
-
-  describe('defaultFileSystem', () => {
-    const testDir = path.join(
-      os.tmpdir(),
-      `trade-republic-test-${Date.now().toString()}`,
-    );
-    const testFile = path.join(testDir, 'test.txt');
-
-    beforeEach(async () => {
-      // Clean up test directory
-      try {
-        await fs.rm(testDir, { recursive: true, force: true });
-      } catch {
-        // Directory may not exist
-      }
-    });
-
-    afterEach(async () => {
-      // Clean up test directory
-      try {
-        await fs.rm(testDir, { recursive: true, force: true });
-      } catch {
-        // Directory may not exist
-      }
-    });
-
-    it('should create directory with mkdir', async () => {
-      await defaultFileSystem.mkdir(testDir, { recursive: true });
-
-      const stat = await fs.stat(testDir);
-      expect(stat.isDirectory()).toBe(true);
-    });
-
-    it('should write and read files', async () => {
-      await defaultFileSystem.mkdir(testDir, { recursive: true });
-
-      const content = 'test content';
-      await defaultFileSystem.writeFile(testFile, content);
-
-      const readContent = await defaultFileSystem.readFile(testFile);
-      expect(readContent).toBe(content);
-    });
-
-    it('should return true for existing files', async () => {
-      await defaultFileSystem.mkdir(testDir, { recursive: true });
-      await defaultFileSystem.writeFile(testFile, 'content');
-
-      const exists = await defaultFileSystem.exists(testFile);
-      expect(exists).toBe(true);
-    });
-
-    it('should return false for non-existing files', async () => {
-      const exists = await defaultFileSystem.exists(
-        path.join(testDir, 'nonexistent.txt'),
-      );
-      expect(exists).toBe(false);
-    });
-  });
-
-  describe('defaultWebSocketFactory', () => {
-    it('should create a WebSocket with expected interface', () => {
-      const ws = defaultWebSocketFactory('wss://test.com');
-      expect(typeof ws.addEventListener).toBe('function');
-      expect(typeof ws.removeEventListener).toBe('function');
-      expect(typeof ws.send).toBe('function');
-      expect(typeof ws.close).toBe('function');
-    });
-
-    it('should pass headers to WebSocket when provided', () => {
-      const mockUndici = jest.requireMock<{ WebSocket: jest.Mock }>('undici');
-      mockUndici.WebSocket.mockClear();
-
-      defaultWebSocketFactory('wss://test.com', {
-        headers: { Cookie: 'session=test' },
-      });
-
-      expect(mockUndici.WebSocket).toHaveBeenCalledWith('wss://test.com', {
-        headers: { Cookie: 'session=test' },
-      });
-    });
-
-    it('should not pass options when no headers provided', () => {
-      const mockUndici = jest.requireMock<{ WebSocket: jest.Mock }>('undici');
-      mockUndici.WebSocket.mockClear();
-
-      defaultWebSocketFactory('wss://test.com');
-
-      expect(mockUndici.WebSocket).toHaveBeenCalledWith(
-        'wss://test.com',
-        undefined,
-      );
     });
   });
 });

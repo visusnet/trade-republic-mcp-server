@@ -16,6 +16,7 @@ import { SymbolMapper } from './services/SymbolMapper';
 import { TechnicalAnalysisService } from './services/TechnicalAnalysisService';
 import type { TradeRepublicApiService } from './services/TradeRepublicApiService';
 import {
+  AuthToolRegistry,
   ExecutionToolRegistry,
   ExternalDataToolRegistry,
   MarketDataToolRegistry,
@@ -156,6 +157,10 @@ BEST PRACTICES:
         marketEventService,
       );
       marketEventToolRegistry.register();
+
+      // Auth tools for 2FA verification
+      const authToolRegistry = new AuthToolRegistry(server, this.apiService);
+      authToolRegistry.register();
     }
 
     // External data tools don't require authentication

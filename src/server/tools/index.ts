@@ -2,6 +2,7 @@
  * Tools - Exports
  */
 
+export { AuthToolRegistry } from './AuthToolRegistry';
 export { PortfolioToolRegistry } from './PortfolioToolRegistry';
 export { MarketDataToolRegistry } from './MarketDataToolRegistry';
 export { TechnicalAnalysisToolRegistry } from './TechnicalAnalysisToolRegistry';

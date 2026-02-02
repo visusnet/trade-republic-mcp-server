@@ -1,7 +1,16 @@
-/* eslint-disable @typescript-eslint/unbound-method */
+jest.mock('node:fs', () => ({
+  promises: {
+    mkdir: jest.fn(),
+    writeFile: jest.fn(),
+    readFile: jest.fn(),
+    access: jest.fn(),
+  },
+}));
+
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import { promises as fs } from 'node:fs';
 import { mockLogger } from '@test/loggerMock';
-import type { FileSystem, KeyPair } from './TradeRepublicApiService.types';
+import type { KeyPair } from './TradeRepublicApiService.types';
 
 const logger = mockLogger();
 jest.mock('../../logger', () => ({
@@ -10,8 +19,9 @@ jest.mock('../../logger', () => ({
 
 import { CryptoManager } from './TradeRepublicApiService.crypto';
 
+const mockFs = fs as jest.Mocked<typeof fs>;
+
 describe('CryptoManager', () => {
-  let mockFileSystem: jest.Mocked<FileSystem>;
   let cryptoManager: CryptoManager;
 
   const testKeyPair: KeyPair = {
@@ -22,13 +32,8 @@ describe('CryptoManager', () => {
   };
 
   beforeEach(() => {
-    mockFileSystem = {
-      readFile: jest.fn(),
-      writeFile: jest.fn(),
-      exists: jest.fn(),
-      mkdir: jest.fn(),
-    };
-    cryptoManager = new CryptoManager('/test/config', mockFileSystem);
+    jest.clearAllMocks();
+    cryptoManager = new CryptoManager('/test/config');
   });
 
   describe('generateKeyPair', () => {
@@ -52,23 +57,23 @@ describe('CryptoManager', () => {
 
   describe('saveKeyPair', () => {
     it('should save key pair to file system', async () => {
-      mockFileSystem.mkdir.mockResolvedValue(undefined);
-      mockFileSystem.writeFile.mockResolvedValue(undefined);
+      mockFs.mkdir.mockResolvedValue(undefined);
+      mockFs.writeFile.mockResolvedValue(undefined);
 
       await cryptoManager.saveKeyPair(testKeyPair);
 
-      expect(mockFileSystem.mkdir).toHaveBeenCalledWith('/test/config', {
+      expect(mockFs.mkdir).toHaveBeenCalledWith('/test/config', {
         recursive: true,
       });
-      expect(mockFileSystem.writeFile).toHaveBeenCalledWith(
+      expect(mockFs.writeFile).toHaveBeenCalledWith(
         '/test/config/keys.json',
         JSON.stringify(testKeyPair, null, 2),
       );
     });
 
     it('should log when saving key pair', async () => {
-      mockFileSystem.mkdir.mockResolvedValue(undefined);
-      mockFileSystem.writeFile.mockResolvedValue(undefined);
+      mockFs.mkdir.mockResolvedValue(undefined);
+      mockFs.writeFile.mockResolvedValue(undefined);
 
       await cryptoManager.saveKeyPair(testKeyPair);
 
@@ -80,29 +85,30 @@ describe('CryptoManager', () => {
 
   describe('loadKeyPair', () => {
     it('should load key pair from file system', async () => {
-      mockFileSystem.exists.mockResolvedValue(true);
-      mockFileSystem.readFile.mockResolvedValue(JSON.stringify(testKeyPair));
+      mockFs.access.mockResolvedValue(undefined);
+      mockFs.readFile.mockResolvedValue(JSON.stringify(testKeyPair));
 
       const result = await cryptoManager.loadKeyPair();
 
-      expect(mockFileSystem.readFile).toHaveBeenCalledWith(
+      expect(mockFs.readFile).toHaveBeenCalledWith(
         '/test/config/keys.json',
+        'utf-8',
       );
       expect(result).toEqual(testKeyPair);
     });
 
     it('should return null if key file does not exist', async () => {
-      mockFileSystem.exists.mockResolvedValue(false);
+      mockFs.access.mockRejectedValue(new Error('ENOENT'));
 
       const result = await cryptoManager.loadKeyPair();
 
       expect(result).toBeNull();
-      expect(mockFileSystem.readFile).not.toHaveBeenCalled();
+      expect(mockFs.readFile).not.toHaveBeenCalled();
     });
 
     it('should log when loading key pair', async () => {
-      mockFileSystem.exists.mockResolvedValue(true);
-      mockFileSystem.readFile.mockResolvedValue(JSON.stringify(testKeyPair));
+      mockFs.access.mockResolvedValue(undefined);
+      mockFs.readFile.mockResolvedValue(JSON.stringify(testKeyPair));
 
       await cryptoManager.loadKeyPair();
 
@@ -114,18 +120,16 @@ describe('CryptoManager', () => {
 
   describe('hasStoredKeyPair', () => {
     it('should return true if key file exists', async () => {
-      mockFileSystem.exists.mockResolvedValue(true);
+      mockFs.access.mockResolvedValue(undefined);
 
       const result = await cryptoManager.hasStoredKeyPair();
 
       expect(result).toBe(true);
-      expect(mockFileSystem.exists).toHaveBeenCalledWith(
-        '/test/config/keys.json',
-      );
+      expect(mockFs.access).toHaveBeenCalledWith('/test/config/keys.json');
     });
 
     it('should return false if key file does not exist', async () => {
-      mockFileSystem.exists.mockResolvedValue(false);
+      mockFs.access.mockRejectedValue(new Error('ENOENT'));
 
       const result = await cryptoManager.hasStoredKeyPair();
 
