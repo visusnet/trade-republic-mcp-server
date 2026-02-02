@@ -1020,4 +1020,321 @@ describe('TradeRepublicApiService', () => {
       expect(fetchCallTimes[1] - firstRequestTime).toBeGreaterThanOrEqual(1500);
     });
   });
+
+  describe('exponential backoff', () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('should retry on 500 server error up to 3 times then fail', async () => {
+      await service.initialize();
+
+      let callCount = 0;
+      mockFetch.mockImplementation(() => {
+        callCount++;
+        return Promise.resolve({
+          ok: false,
+          status: 500,
+          json: () => Promise.resolve({ message: 'Internal server error' }),
+        } as Response);
+      });
+
+      // Start the login and advance timers concurrently
+      const loginPromise = service
+        .login(testCredentials)
+        .catch((e: unknown) => e as Error);
+
+      // Advance through all retry attempts with backoff delays
+      // 1st attempt: immediate
+      // 2nd attempt: after 1s delay
+      // 3rd attempt: after 2s delay
+      // 4th attempt: after 4s delay (final failure)
+      await jest.advanceTimersByTimeAsync(10000);
+
+      const result = await loginPromise;
+      expect(result).toBeInstanceOf(Error);
+      expect(callCount).toBe(4); // Initial + 3 retries
+    });
+
+    it('should retry on 429 rate limit error', async () => {
+      await service.initialize();
+
+      let callCount = 0;
+      mockFetch.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return Promise.resolve({
+            ok: false,
+            status: 429,
+            json: () => Promise.resolve({ message: 'Rate limited' }),
+          } as Response);
+        }
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ processId: 'test-process-id' }),
+        } as Response);
+      });
+
+      const loginPromise = service.login(testCredentials);
+      await jest.advanceTimersByTimeAsync(5000);
+
+      const result = await loginPromise;
+      expect(result.processId).toBe('test-process-id');
+      expect(callCount).toBe(2); // Initial failed, then success
+    });
+
+    it('should NOT retry on 400 client error', async () => {
+      await service.initialize();
+
+      let callCount = 0;
+      mockFetch.mockImplementation(() => {
+        callCount++;
+        return Promise.resolve({
+          ok: false,
+          status: 400,
+          json: () => Promise.resolve({ message: 'Bad request' }),
+        } as Response);
+      });
+
+      const loginPromise = service
+        .login(testCredentials)
+        .catch((e: unknown) => e as Error);
+      await jest.advanceTimersByTimeAsync(1000);
+
+      const result = await loginPromise;
+      expect(result).toBeInstanceOf(Error);
+      expect((result as Error).message).toBe('Bad request');
+      expect(callCount).toBe(1); // No retries
+    });
+
+    it('should NOT retry on 401 unauthorized error', async () => {
+      await service.initialize();
+
+      let callCount = 0;
+      mockFetch.mockImplementation(() => {
+        callCount++;
+        return Promise.resolve({
+          ok: false,
+          status: 401,
+          json: () => Promise.resolve({ message: 'Invalid credentials' }),
+        } as Response);
+      });
+
+      const loginPromise = service
+        .login(testCredentials)
+        .catch((e: unknown) => e as Error);
+      await jest.advanceTimersByTimeAsync(1000);
+
+      const result = await loginPromise;
+      expect(result).toBeInstanceOf(Error);
+      expect((result as Error).message).toBe('Invalid credentials');
+      expect(callCount).toBe(1); // No retries
+    });
+
+    it('should retry on network error', async () => {
+      await service.initialize();
+
+      let callCount = 0;
+      mockFetch.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          const error = new Error('ECONNRESET');
+          (error as NodeJS.ErrnoException).code = 'ECONNRESET';
+          return Promise.reject(error);
+        }
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ processId: 'test-process-id' }),
+        } as Response);
+      });
+
+      const loginPromise = service.login(testCredentials);
+      await jest.advanceTimersByTimeAsync(5000);
+
+      const result = await loginPromise;
+      expect(result.processId).toBe('test-process-id');
+      expect(callCount).toBe(2); // Initial failed, then success
+    });
+
+    it('should succeed after transient 500 failure', async () => {
+      await service.initialize();
+
+      let callCount = 0;
+      mockFetch.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return Promise.resolve({
+            ok: false,
+            status: 500,
+            json: () => Promise.resolve({ message: 'Temporary failure' }),
+          } as Response);
+        }
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ processId: 'test-process-id' }),
+        } as Response);
+      });
+
+      const loginPromise = service.login(testCredentials);
+      await jest.advanceTimersByTimeAsync(5000);
+
+      const result = await loginPromise;
+      expect(result.processId).toBe('test-process-id');
+      expect(callCount).toBe(2);
+    });
+
+    it('should log retry attempts', async () => {
+      await service.initialize();
+
+      let callCount = 0;
+      mockFetch.mockImplementation(() => {
+        callCount++;
+        if (callCount <= 2) {
+          return Promise.resolve({
+            ok: false,
+            status: 500,
+            json: () => Promise.resolve({ message: 'Server error' }),
+          } as Response);
+        }
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ processId: 'test-process-id' }),
+        } as Response);
+      });
+
+      const loginPromise = service.login(testCredentials);
+      await jest.advanceTimersByTimeAsync(10000);
+
+      await loginPromise;
+
+      expect(logger.api.warn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          attempt: expect.any(Number),
+          retriesLeft: expect.any(Number),
+        }),
+        expect.stringContaining('retrying'),
+      );
+    });
+
+    it('should retry 2FA verification on 503 service unavailable', async () => {
+      await service.initialize();
+
+      // First login successfully
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ processId: 'test-process-id' }),
+      } as Response);
+
+      await service.login(testCredentials);
+      await jest.advanceTimersByTimeAsync(1000);
+
+      // Then 2FA with retry
+      let callCount = 0;
+      mockFetch.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return Promise.resolve({
+            ok: false,
+            status: 503,
+            json: () => Promise.resolve({ message: 'Service unavailable' }),
+          } as Response);
+        }
+        return Promise.resolve(
+          createMock2FAResponse([
+            'session=test-cookie; Domain=traderepublic.com',
+          ]) as Response,
+        );
+      });
+
+      const verify2FAPromise = service.verify2FA(testTwoFactorCode);
+      await jest.advanceTimersByTimeAsync(10000);
+
+      await verify2FAPromise;
+      expect(service.getAuthStatus()).toBe(AuthStatus.AUTHENTICATED);
+      expect(callCount).toBe(2);
+    });
+
+    it('should retry refreshSession on 502 bad gateway', async () => {
+      await service.initialize();
+
+      // Setup authenticated state
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({ processId: 'test-process-id' }),
+      } as Response);
+      await service.login(testCredentials);
+      await jest.advanceTimersByTimeAsync(1000);
+
+      mockFetch.mockResolvedValueOnce(
+        createMock2FAResponse([
+          'session=test-cookie; Domain=traderepublic.com',
+        ]) as Response,
+      );
+      await service.verify2FA(testTwoFactorCode);
+      await jest.advanceTimersByTimeAsync(1000);
+
+      // Now test refresh with retry
+      let callCount = 0;
+      mockFetch.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return Promise.resolve({
+            ok: false,
+            status: 502,
+            json: () => Promise.resolve({ message: 'Bad gateway' }),
+          } as Response);
+        }
+        return Promise.resolve(createMockRefreshResponse() as Response);
+      });
+
+      const refreshPromise = service.refreshSession();
+      await jest.advanceTimersByTimeAsync(10000);
+
+      await refreshPromise;
+      expect(callCount).toBe(2);
+    });
+
+    it('should respect exponential backoff timing (1s, 2s, 4s delays)', async () => {
+      await service.initialize();
+
+      const fetchCallTimes: number[] = [];
+      mockFetch.mockImplementation(() => {
+        fetchCallTimes.push(Date.now());
+        return Promise.resolve({
+          ok: false,
+          status: 500,
+          json: () => Promise.resolve({ message: 'Server error' }),
+        } as Response);
+      });
+
+      const loginPromise = service
+        .login(testCredentials)
+        .catch((e: unknown) => e as Error);
+
+      // Wait for all retries to complete
+      await jest.advanceTimersByTimeAsync(20000);
+
+      const result = await loginPromise;
+      expect(result).toBeInstanceOf(Error);
+
+      // Verify exponential backoff delays (approximately)
+      // First retry after ~1000ms, second after ~2000ms, third after ~4000ms
+      expect(fetchCallTimes.length).toBe(4);
+
+      // The delays between calls should be exponentially increasing
+      // With rate limiting, each call is at least 1s apart, plus backoff
+      const delay1 = fetchCallTimes[1] - fetchCallTimes[0];
+      const delay2 = fetchCallTimes[2] - fetchCallTimes[1];
+      const delay3 = fetchCallTimes[3] - fetchCallTimes[2];
+
+      // Minimum delays should follow exponential pattern
+      expect(delay1).toBeGreaterThanOrEqual(1000); // At least 1s (minTimeout)
+      expect(delay2).toBeGreaterThanOrEqual(2000); // At least 2s (factor 2)
+      expect(delay3).toBeGreaterThanOrEqual(4000); // At least 4s (factor 2)
+    });
+  });
 });

@@ -18,16 +18,18 @@ export default {
         },
       },
     ],
-    // Transform ESM-only packages like p-throttle
-    'node_modules/p-throttle/.+\\.js$': [
+    // Transform ESM-only packages like p-throttle, p-retry and their dependencies
+    'node_modules/(p-throttle|p-retry|is-network-error)/.+\\.js$': [
       'ts-jest',
       {
         useESM: true,
       },
     ],
   },
-  // Transform ESM-only packages like p-throttle
-  transformIgnorePatterns: ['node_modules/(?!(p-throttle)/)'],
+  // Transform ESM-only packages like p-throttle, p-retry and their dependencies
+  transformIgnorePatterns: [
+    'node_modules/(?!(p-throttle|p-retry|is-network-error)/)',
+  ],
   testMatch: ['**/*.spec.ts'],
   collectCoverageFrom: [
     'src/**/*.ts',

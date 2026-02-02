@@ -5,6 +5,7 @@
  * Handles authentication, session management, and WebSocket communication.
  */
 
+import pRetry from 'p-retry';
 import pThrottle from 'p-throttle';
 
 import { logger } from '../../logger';
@@ -36,6 +37,18 @@ import type { WebSocketManager } from './TradeRepublicApiService.websocket';
 
 /** Session expiration buffer (30 seconds before actual expiration) */
 const SESSION_EXPIRATION_BUFFER_MS = 30 * 1000;
+
+/** Retry configuration per ADR-001 */
+const RETRY_CONFIG = {
+  /** Number of retry attempts */
+  retries: 3,
+  /** Minimum delay between retries (1 second) */
+  minTimeout: 1000,
+  /** Maximum delay between retries (10 seconds) */
+  maxTimeout: 10000,
+  /** Backoff multiplier (exponential factor) */
+  factor: 2,
+} as const;
 
 /**
  * TradeRepublicApiService provides the main interface for interacting with
@@ -69,9 +82,14 @@ export class TradeRepublicApiService {
   ) {
     // Rate limit: 1 request per 1000ms (per ADR-001)
     const throttle = pThrottle({ limit: 1, interval: 1000 });
+
+    // Compose: throttle(retry(fetch))
+    // Each retry attempt respects rate limiting
+    const retryFetch = this.createRetryFetch(this.fetchFn);
     this.throttledFetch = throttle((...args: Parameters<FetchFunction>) =>
-      this.fetchFn(...args),
+      retryFetch(...args),
     ) as FetchFunction;
+
     // Forward WebSocket events
     this.ws.on('message', (message: WebSocketMessage) => {
       this.messageHandlers.forEach((handler) => {
@@ -379,6 +397,53 @@ export class TradeRepublicApiService {
         'Service not initialized. Call initialize() first.',
       );
     }
+  }
+
+  /**
+   * Creates a fetch function wrapper with exponential backoff retry logic.
+   * Retries on 5xx server errors and 429 rate limit.
+   * Does NOT retry on 4xx client errors (except 429).
+   */
+  private createRetryFetch(fetchFn: FetchFunction): FetchFunction {
+    return async (
+      url: string | URL | globalThis.Request,
+      init?: RequestInit,
+    ): Promise<Response> => {
+      return pRetry(
+        async () => {
+          const response = await fetchFn(url, init);
+
+          // Don't retry 4xx client errors (except 429 rate limit)
+          if (
+            response.status >= 400 &&
+            response.status < 500 &&
+            response.status !== 429
+          ) {
+            // Return response as-is, let caller handle error
+            return response;
+          }
+
+          // Retry on 5xx server errors and 429 rate limit
+          if (response.status >= 500 || response.status === 429) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+
+          return response;
+        },
+        {
+          retries: RETRY_CONFIG.retries,
+          minTimeout: RETRY_CONFIG.minTimeout,
+          maxTimeout: RETRY_CONFIG.maxTimeout,
+          factor: RETRY_CONFIG.factor,
+          onFailedAttempt: (error) => {
+            logger.api.warn(
+              { attempt: error.attemptNumber, retriesLeft: error.retriesLeft },
+              `Request failed, retrying...`,
+            );
+          },
+        },
+      );
+    };
   }
 
   /**
