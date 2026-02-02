@@ -1748,11 +1748,26 @@ No rate limiting implemented. HTTP requests in `login()` (line 121), `verify2FA(
 
 ---
 
-### DISCREPANCY-004: ADR-001 Missing Exponential Backoff
+### DISCREPANCY-004: ADR-001 Missing Exponential Backoff [RESOLVED]
 
 **ADR Reference:** ADR-001: Trade Republic API Integration (line 95)
 
 **Severity:** High
+
+**Status:** RESOLVED
+
+**Resolution:**
+Implemented exponential backoff for HTTP requests using p-retry library:
+- Wraps fetch function with retry logic: `throttle(retry(fetch))`
+- Retries on 5xx server errors and 429 rate limit
+- Does NOT retry on 4xx client errors (except 429)
+- Retries on network errors (ECONNRESET, ETIMEDOUT, ENOTFOUND)
+- Parameters: 3 retries, 1s base delay, 2x multiplier, 10s max delay
+- Each retry attempt respects rate limiting
+- Logs retry attempts with attempt number and retries left
+- 100% test coverage with comprehensive test cases
+
+**Commit:** 7c32e95
 
 **Description:**
 ADR-001 requires "Exponential backoff on errors" but HTTP error handling only throws exceptions without retry logic.
@@ -2842,7 +2857,13 @@ After all agents complete, fix discrepancies in this order:
    - All HTTP requests (login, verify2FA, refreshSession) now throttled to max 1 request/second
    - Updated Jest config to handle ESM-only p-throttle package
    - Added comprehensive rate limiting tests
-8. **DISCREPANCY-004:** Implement exponential backoff on HTTP errors
+8. ~~**DISCREPANCY-004:** Implement exponential backoff on HTTP errors~~ **RESOLVED (2026-02-02)**
+   - Added `p-retry` dependency for exponential backoff functionality
+   - Retry on 5xx server errors and 429 rate limit
+   - Do NOT retry on 4xx client errors (except 429)
+   - Retry on network errors (ECONNRESET, etc.)
+   - Parameters: 3 retries, 1s base delay, 2x multiplier, 10s max
+   - Compose: throttle(retry(fetch)) - each retry respects rate limiting
 9. **DISCREPANCY-006:** Implement WebSocket reconnection with backoff
 10. **DISCREPANCY-002:** Add missing test coverage for OrderService.ts
 
