@@ -14,10 +14,20 @@ import {
   WebSocketError,
   type MessageCode,
   type WebSocket,
+  type WebSocketCloseEvent,
+  type WebSocketErrorEvent,
   type WebSocketFactory,
   type WebSocketMessage,
+  type WebSocketMessageEvent,
+  type WebSocketOpenEvent,
   type WebSocketOptions,
 } from './TradeRepublicApiService.types';
+
+/** Heartbeat check interval in milliseconds (20s, matching pytr) */
+const HEARTBEAT_CHECK_MS = 20_000;
+
+/** Connection timeout in milliseconds (40s, 2x heartbeat interval) */
+const CONNECTION_TIMEOUT_MS = 40_000;
 
 /**
  * Manages WebSocket connection to Trade Republic API.
@@ -31,9 +41,50 @@ export class WebSocketManager extends EventEmitter {
   private status: ConnectionStatus = ConnectionStatus.DISCONNECTED;
   private nextSubscriptionId = 1;
   private previousResponses: Map<number, string> = new Map();
+  private lastMessageTime = Date.now();
+  private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+
+  // Store bound event handlers for proper cleanup
+  private openHandler: ((event: WebSocketOpenEvent) => void) | null = null;
+  private messageHandler: ((event: WebSocketMessageEvent) => void) | null =
+    null;
+  private errorHandler: ((event: WebSocketErrorEvent) => void) | null = null;
+  private closeHandler: ((event: WebSocketCloseEvent) => void) | null = null;
 
   constructor(private readonly wsFactory: WebSocketFactory) {
     super();
+  }
+
+  /**
+   * Starts the heartbeat interval to check for connection health.
+   * If no message is received within CONNECTION_TIMEOUT_MS, the connection is considered dead.
+   */
+  private startHeartbeat(): void {
+    this.lastMessageTime = Date.now();
+    this.heartbeatInterval = setInterval(() => {
+      if (Date.now() - this.lastMessageTime >= CONNECTION_TIMEOUT_MS) {
+        this.handleConnectionDead();
+      }
+    }, HEARTBEAT_CHECK_MS);
+  }
+
+  /**
+   * Stops the heartbeat interval.
+   */
+  private stopHeartbeat(): void {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
+  }
+
+  /**
+   * Handles a dead connection by disconnecting and emitting an error.
+   */
+  private handleConnectionDead(): void {
+    logger.api.warn('Connection dead - no message received in 40s');
+    this.disconnect();
+    this.emit('error', new WebSocketError('Connection timeout'));
   }
 
   /**
@@ -64,45 +115,57 @@ export class WebSocketManager extends EventEmitter {
           : {};
         this.ws = this.wsFactory(TR_WS_URL, options);
 
-        this.ws.on('open', () => {
+        this.openHandler = () => {
           this.status = ConnectionStatus.CONNECTED;
           logger.api.info('WebSocket connected');
           this.sendConnectMessage();
+          this.startHeartbeat();
           settle(() => {
             resolve();
           });
-        });
+        };
 
-        this.ws.on('message', (data: Buffer | string) => {
-          this.handleMessage(data);
-        });
+        this.messageHandler = (event: WebSocketMessageEvent) => {
+          this.handleMessage(event.data);
+        };
 
-        this.ws.on('error', (error: Error) => {
-          logger.api.error(`WebSocket error: ${error.message}`);
+        this.errorHandler = (event: WebSocketErrorEvent) => {
+          const errorMessage =
+            event.error?.message ?? event.message ?? 'Unknown WebSocket error';
+          logger.api.error(`WebSocket error: ${errorMessage}`);
           const wasConnecting = this.status === ConnectionStatus.CONNECTING;
+          this.stopHeartbeat();
           this.status = ConnectionStatus.DISCONNECTED;
           if (wasConnecting) {
             settle(() => {
-              reject(error);
+              reject(event.error ?? new Error(errorMessage));
             });
           } else {
-            this.emit('error', error);
+            this.emit('error', event.error ?? new Error(errorMessage));
           }
-        });
+        };
 
-        this.ws.on('close', (code: number, reason: Buffer) => {
-          const reasonStr = reason.toString();
-          logger.api.info(`WebSocket closed: ${code} ${reasonStr}`);
+        this.closeHandler = (event: WebSocketCloseEvent) => {
+          const reasonStr = event.reason;
+          logger.api.info(`WebSocket closed: ${event.code} ${reasonStr}`);
           const wasConnecting = this.status === ConnectionStatus.CONNECTING;
+          this.stopHeartbeat();
           this.status = ConnectionStatus.DISCONNECTED;
           if (wasConnecting) {
             settle(() => {
               reject(
-                new WebSocketError(`Connection closed: ${code} ${reasonStr}`),
+                new WebSocketError(
+                  `Connection closed: ${event.code} ${reasonStr}`,
+                ),
               );
             });
           }
-        });
+        };
+
+        this.ws.addEventListener('open', this.openHandler);
+        this.ws.addEventListener('message', this.messageHandler);
+        this.ws.addEventListener('error', this.errorHandler);
+        this.ws.addEventListener('close', this.closeHandler);
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
       } catch (_error) /* istanbul ignore next */ {
         this.status = ConnectionStatus.DISCONNECTED;
@@ -117,9 +180,38 @@ export class WebSocketManager extends EventEmitter {
    * Disconnects the WebSocket connection.
    */
   public disconnect(): void {
+    this.stopHeartbeat();
     if (this.ws) {
       logger.api.info('Disconnecting WebSocket');
-      this.ws.removeAllListeners();
+      // Remove event listeners
+      if (this.openHandler) {
+        this.ws.removeEventListener(
+          'open',
+          this.openHandler as (...args: unknown[]) => void,
+        );
+        this.openHandler = null;
+      }
+      if (this.messageHandler) {
+        this.ws.removeEventListener(
+          'message',
+          this.messageHandler as (...args: unknown[]) => void,
+        );
+        this.messageHandler = null;
+      }
+      if (this.errorHandler) {
+        this.ws.removeEventListener(
+          'error',
+          this.errorHandler as (...args: unknown[]) => void,
+        );
+        this.errorHandler = null;
+      }
+      if (this.closeHandler) {
+        this.ws.removeEventListener(
+          'close',
+          this.closeHandler as (...args: unknown[]) => void,
+        );
+        this.closeHandler = null;
+      }
       this.ws.close();
       this.ws = null;
     }
@@ -189,6 +281,7 @@ export class WebSocketManager extends EventEmitter {
    * Handles incoming WebSocket messages.
    */
   private handleMessage(data: Buffer | string): void {
+    this.lastMessageTime = Date.now();
     const messageStr = typeof data === 'string' ? data : data.toString();
     logger.api.debug(`Received message: ${messageStr.substring(0, 100)}...`);
 

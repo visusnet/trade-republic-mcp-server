@@ -17,14 +17,15 @@ jest.mock('../../logger', () => ({
   logger,
 }));
 
-// Mock the ws module
-jest.mock('ws', () => {
-  return jest.fn().mockImplementation(() => ({
-    on: jest.fn(),
+// Mock the undici module
+jest.mock('undici', () => ({
+  WebSocket: jest.fn().mockImplementation(() => ({
+    addEventListener: jest.fn(),
+    removeEventListener: jest.fn(),
     close: jest.fn(),
     send: jest.fn(),
-  }));
-});
+  })),
+}));
 
 import {
   createTradeRepublicApiService,
@@ -364,9 +365,34 @@ describe('Services Index', () => {
 
   describe('defaultWebSocketFactory', () => {
     it('should create a WebSocket instance', () => {
-      // Since ws is mocked, this just verifies the function is callable
+      // Since undici is mocked, this just verifies the function is callable
       const ws = defaultWebSocketFactory('wss://test.com');
       expect(ws).toBeDefined();
+    });
+
+    it('should pass headers to WebSocket when provided', () => {
+      const mockUndici = jest.requireMock<{ WebSocket: jest.Mock }>('undici');
+      mockUndici.WebSocket.mockClear();
+
+      defaultWebSocketFactory('wss://test.com', {
+        headers: { Cookie: 'session=test' },
+      });
+
+      expect(mockUndici.WebSocket).toHaveBeenCalledWith('wss://test.com', {
+        headers: { Cookie: 'session=test' },
+      });
+    });
+
+    it('should not pass options when no headers provided', () => {
+      const mockUndici = jest.requireMock<{ WebSocket: jest.Mock }>('undici');
+      mockUndici.WebSocket.mockClear();
+
+      defaultWebSocketFactory('wss://test.com');
+
+      expect(mockUndici.WebSocket).toHaveBeenCalledWith(
+        'wss://test.com',
+        undefined,
+      );
     });
   });
 });

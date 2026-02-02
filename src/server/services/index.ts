@@ -10,13 +10,15 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import WebSocketLib from 'ws';
+import { WebSocket as UndiciWebSocket } from 'undici';
 
 import { CryptoManager } from './TradeRepublicApiService.crypto';
 import { TradeRepublicApiService } from './TradeRepublicApiService';
 import {
   DEFAULT_CONFIG_DIR,
   type FileSystem,
+  type WebSocket,
+  type WebSocketOptions,
 } from './TradeRepublicApiService.types';
 import { WebSocketManager } from './TradeRepublicApiService.websocket';
 
@@ -111,10 +113,15 @@ export const defaultFileSystem: FileSystem = {
 };
 
 /**
- * Default WebSocket factory using the ws library.
+ * Default WebSocket factory using undici WebSocket (built into Node.js 24+).
  */
-export function defaultWebSocketFactory(url: string): WebSocketLib {
-  return new WebSocketLib(url);
+export function defaultWebSocketFactory(
+  url: string,
+  options?: WebSocketOptions,
+): WebSocket {
+  // undici WebSocket accepts headers as part of the options
+  const wsOptions = options?.headers ? { headers: options.headers } : undefined;
+  return new UndiciWebSocket(url, wsOptions) as unknown as WebSocket;
 }
 
 /**
@@ -135,7 +142,7 @@ export interface CreateTradeRepublicApiServiceOptions {
  * By default:
  * - Uses ~/.trade-republic-mcp/ for key storage
  * - Uses Node.js fs for file operations
- * - Uses ws library for WebSocket connections
+ * - Uses undici WebSocket (built into Node.js 24+) for WebSocket connections
  * - Uses global fetch for HTTP requests
  *
  * @param options - Optional configuration options

@@ -1,5 +1,12 @@
 /* eslint-disable @typescript-eslint/unbound-method */
-import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import {
+  describe,
+  it,
+  expect,
+  jest,
+  beforeEach,
+  afterEach,
+} from '@jest/globals';
 import { EventEmitter } from 'events';
 
 import { mockLogger } from '@test/loggerMock';
@@ -7,7 +14,11 @@ import {
   ConnectionStatus,
   MESSAGE_CODE,
   type WebSocket,
+  type WebSocketCloseEvent,
+  type WebSocketErrorEvent,
   type WebSocketMessage,
+  type WebSocketMessageEvent,
+  type WebSocketOpenEvent,
   type WebSocketOptions,
 } from './TradeRepublicApiService.types';
 
@@ -22,11 +33,11 @@ import { WebSocketManager } from './TradeRepublicApiService.websocket';
 interface MockWebSocket extends WebSocket {
   _readyState: number;
   setReadyState(state: number): void;
-  emit: (event: string, ...args: unknown[]) => boolean;
+  emit: (event: string, eventData?: unknown) => boolean;
 }
 
 /**
- * Creates a mock WebSocket for testing
+ * Creates a mock WebSocket for testing with addEventListener API
  */
 function createMockWebSocket(): MockWebSocket {
   const emitter = new EventEmitter();
@@ -47,18 +58,61 @@ function createMockWebSocket(): MockWebSocket {
     CLOSING: 2,
     send: jest.fn(),
     close: jest.fn(),
-    on: jest.fn((event: string, listener: (...args: unknown[]) => void) => {
-      emitter.on(event, listener);
-      return mockWs;
-    }) as unknown as MockWebSocket['on'],
-    removeAllListeners: jest.fn(() => {
-      emitter.removeAllListeners();
-      return mockWs;
-    }) as unknown as MockWebSocket['removeAllListeners'],
-    emit: (event: string, ...args: unknown[]) => emitter.emit(event, ...args),
+    addEventListener: jest.fn(
+      (event: string, listener: (event: unknown) => void) => {
+        emitter.on(event, listener);
+      },
+    ) as unknown as MockWebSocket['addEventListener'],
+    removeEventListener: jest.fn(
+      (event: string, listener: (...args: unknown[]) => void) => {
+        emitter.off(event, listener);
+      },
+    ) as unknown as MockWebSocket['removeEventListener'],
+    emit: (event: string, eventData?: unknown) =>
+      emitter.emit(event, eventData),
   };
 
   return mockWs;
+}
+
+/**
+ * Helper to emit a message event in the new format
+ */
+function emitMessage(mockWs: MockWebSocket, data: string | Buffer): boolean {
+  const event: WebSocketMessageEvent = { type: 'message', data };
+  return mockWs.emit('message', event);
+}
+
+/**
+ * Helper to emit an open event
+ */
+function emitOpen(mockWs: MockWebSocket): boolean {
+  const event: WebSocketOpenEvent = { type: 'open' };
+  return mockWs.emit('open', event);
+}
+
+/**
+ * Helper to emit a close event
+ */
+function emitClose(
+  mockWs: MockWebSocket,
+  code: number,
+  reason: string,
+): boolean {
+  const event: WebSocketCloseEvent = { type: 'close', code, reason };
+  return mockWs.emit('close', event);
+}
+
+/**
+ * Helper to emit an error event
+ */
+function emitError(mockWs: MockWebSocket, error: Error): boolean {
+  const event: WebSocketErrorEvent = {
+    type: 'error',
+    error,
+    message: error.message,
+  };
+  return mockWs.emit('error', event);
 }
 
 describe('WebSocketManager', () => {
@@ -77,13 +131,18 @@ describe('WebSocketManager', () => {
     wsManager = new WebSocketManager(mockWsFactory);
   });
 
+  afterEach(() => {
+    // Clean up any pending timers
+    wsManager.disconnect();
+  });
+
   describe('connect', () => {
     it('should establish a WebSocket connection', async () => {
       const connectPromise = wsManager.connect('session=test-cookie');
 
       // Simulate connection open
       mockWs.setReadyState(mockWs.OPEN);
-      mockWs.emit('open');
+      emitOpen(mockWs);
 
       await connectPromise;
 
@@ -96,7 +155,7 @@ describe('WebSocketManager', () => {
       const connectPromise = wsManager.connect(cookieHeader);
 
       mockWs.setReadyState(mockWs.OPEN);
-      mockWs.emit('open');
+      emitOpen(mockWs);
 
       await connectPromise;
 
@@ -112,7 +171,7 @@ describe('WebSocketManager', () => {
       const connectPromise = wsManager.connect('');
 
       mockWs.setReadyState(mockWs.OPEN);
-      mockWs.emit('open');
+      emitOpen(mockWs);
 
       await connectPromise;
 
@@ -123,7 +182,7 @@ describe('WebSocketManager', () => {
       const connectPromise = wsManager.connect('session=test-cookie');
 
       mockWs.setReadyState(mockWs.OPEN);
-      mockWs.emit('open');
+      emitOpen(mockWs);
 
       await connectPromise;
 
@@ -142,16 +201,30 @@ describe('WebSocketManager', () => {
     it('should reject if connection fails', async () => {
       const connectPromise = wsManager.connect('test-session-token');
 
-      mockWs.emit('error', new Error('Connection failed'));
+      emitError(mockWs, new Error('Connection failed'));
 
       await expect(connectPromise).rejects.toThrow('Connection failed');
+      expect(wsManager.getStatus()).toBe(ConnectionStatus.DISCONNECTED);
+    });
+
+    it('should reject with message when error event has no error object during connect', async () => {
+      const connectPromise = wsManager.connect('test-session-token');
+
+      // Emit error event with message but no error object during connecting
+      const event: WebSocketErrorEvent = {
+        type: 'error',
+        message: 'Connection reset by peer',
+      };
+      mockWs.emit('error', event);
+
+      await expect(connectPromise).rejects.toThrow('Connection reset by peer');
       expect(wsManager.getStatus()).toBe(ConnectionStatus.DISCONNECTED);
     });
 
     it('should reject if connection closes unexpectedly', async () => {
       const connectPromise = wsManager.connect('test-session-token');
 
-      mockWs.emit('close', 1006, Buffer.from('Abnormal closure'));
+      emitClose(mockWs, 1006, 'Abnormal closure');
 
       await expect(connectPromise).rejects.toThrow();
       expect(wsManager.getStatus()).toBe(ConnectionStatus.DISCONNECTED);
@@ -161,7 +234,7 @@ describe('WebSocketManager', () => {
       const connectPromise = wsManager.connect('test-session-token');
 
       mockWs.setReadyState(mockWs.OPEN);
-      mockWs.emit('open');
+      emitOpen(mockWs);
 
       await connectPromise;
 
@@ -175,7 +248,7 @@ describe('WebSocketManager', () => {
     it('should close the WebSocket connection', async () => {
       const connectPromise = wsManager.connect('test-session-token');
       mockWs.setReadyState(mockWs.OPEN);
-      mockWs.emit('open');
+      emitOpen(mockWs);
       await connectPromise;
 
       wsManager.disconnect();
@@ -184,15 +257,30 @@ describe('WebSocketManager', () => {
       expect(wsManager.getStatus()).toBe(ConnectionStatus.DISCONNECTED);
     });
 
-    it('should remove all listeners on disconnect', async () => {
+    it('should remove event listeners on disconnect', async () => {
       const connectPromise = wsManager.connect('test-session-token');
       mockWs.setReadyState(mockWs.OPEN);
-      mockWs.emit('open');
+      emitOpen(mockWs);
       await connectPromise;
 
       wsManager.disconnect();
 
-      expect(mockWs.removeAllListeners).toHaveBeenCalled();
+      expect(mockWs.removeEventListener).toHaveBeenCalledWith(
+        'open',
+        expect.any(Function),
+      );
+      expect(mockWs.removeEventListener).toHaveBeenCalledWith(
+        'message',
+        expect.any(Function),
+      );
+      expect(mockWs.removeEventListener).toHaveBeenCalledWith(
+        'error',
+        expect.any(Function),
+      );
+      expect(mockWs.removeEventListener).toHaveBeenCalledWith(
+        'close',
+        expect.any(Function),
+      );
     });
 
     it('should be safe to call disconnect when not connected', () => {
@@ -215,7 +303,7 @@ describe('WebSocketManager', () => {
     it('should return CONNECTED after successful connection', async () => {
       const connectPromise = wsManager.connect('test-session-token');
       mockWs.setReadyState(mockWs.OPEN);
-      mockWs.emit('open');
+      emitOpen(mockWs);
       await connectPromise;
 
       expect(wsManager.getStatus()).toBe(ConnectionStatus.CONNECTED);
@@ -226,7 +314,7 @@ describe('WebSocketManager', () => {
     beforeEach(async () => {
       const connectPromise = wsManager.connect('test-session-token');
       mockWs.setReadyState(mockWs.OPEN);
-      mockWs.emit('open');
+      emitOpen(mockWs);
       await connectPromise;
     });
 
@@ -267,7 +355,7 @@ describe('WebSocketManager', () => {
     beforeEach(async () => {
       const connectPromise = wsManager.connect('test-session-token');
       mockWs.setReadyState(mockWs.OPEN);
-      mockWs.emit('open');
+      emitOpen(mockWs);
       await connectPromise;
     });
 
@@ -283,7 +371,7 @@ describe('WebSocketManager', () => {
     beforeEach(async () => {
       const connectPromise = wsManager.connect('test-session-token');
       mockWs.setReadyState(mockWs.OPEN);
-      mockWs.emit('open');
+      emitOpen(mockWs);
       await connectPromise;
     });
 
@@ -292,7 +380,7 @@ describe('WebSocketManager', () => {
       wsManager.on('message', handler);
 
       const subId = wsManager.subscribe('ticker');
-      mockWs.emit('message', Buffer.from(`${subId} A {"price":100.50}`));
+      emitMessage(mockWs, Buffer.from(`${subId} A {"price":100.50}`));
 
       expect(handler).toHaveBeenCalledWith({
         id: subId,
@@ -307,11 +395,11 @@ describe('WebSocketManager', () => {
 
       const subId = wsManager.subscribe('ticker');
       // First send Answer to establish previous response
-      mockWs.emit('message', Buffer.from(`${subId} A {"price":100}`));
+      emitMessage(mockWs, Buffer.from(`${subId} A {"price":100}`));
 
       // Then send Delta: =10 copies "{"price":1", +01} inserts "01}"
       // Result: {"price":101}
-      mockWs.emit('message', Buffer.from(`${subId} D =10\t+01}`));
+      emitMessage(mockWs, Buffer.from(`${subId} D =10\t+01}`));
 
       expect(handler).toHaveBeenLastCalledWith({
         id: subId,
@@ -325,7 +413,7 @@ describe('WebSocketManager', () => {
       wsManager.on('message', handler);
 
       const subId = wsManager.subscribe('timeline');
-      mockWs.emit('message', Buffer.from(`${subId} C {}`));
+      emitMessage(mockWs, Buffer.from(`${subId} C {}`));
 
       expect(handler).toHaveBeenCalledWith({
         id: subId,
@@ -340,7 +428,7 @@ describe('WebSocketManager', () => {
 
       const subId = wsManager.subscribe('ticker');
       // Send as string instead of Buffer
-      mockWs.emit('message', `${subId} A {"price":50.00}`);
+      emitMessage(mockWs, `${subId} A {"price":50.00}`);
 
       expect(handler).toHaveBeenCalledWith({
         id: subId,
@@ -354,7 +442,7 @@ describe('WebSocketManager', () => {
     beforeEach(async () => {
       const connectPromise = wsManager.connect('test-session-token');
       mockWs.setReadyState(mockWs.OPEN);
-      mockWs.emit('open');
+      emitOpen(mockWs);
       await connectPromise;
     });
 
@@ -364,7 +452,7 @@ describe('WebSocketManager', () => {
 
       const subId = wsManager.subscribe('ticker');
       // First send an Answer message to establish previous response
-      mockWs.emit('message', Buffer.from(`${subId} A {"price":100}`));
+      emitMessage(mockWs, Buffer.from(`${subId} A {"price":100}`));
 
       // Then send a Delta message with copy instruction: copy first 10 chars + insert new ending
       // Previous: {"price":100}
@@ -372,7 +460,7 @@ describe('WebSocketManager', () => {
       // =10 copies first 10 chars: {"price":1
       // +50} inserts "50}"
       // Result: {"price":150}
-      mockWs.emit('message', Buffer.from(`${subId} D =10\t+50}`));
+      emitMessage(mockWs, Buffer.from(`${subId} D =10\t+50}`));
 
       expect(handler).toHaveBeenLastCalledWith({
         id: subId,
@@ -387,11 +475,11 @@ describe('WebSocketManager', () => {
 
       const subId = wsManager.subscribe('ticker');
       // First establish previous response
-      mockWs.emit('message', Buffer.from(`${subId} A {"a":1}`));
+      emitMessage(mockWs, Buffer.from(`${subId} A {"a":1}`));
 
       // Delta: =5 copies {"a": then +2} inserts 2}
       // Result: {"a":2}
-      mockWs.emit('message', Buffer.from(`${subId} D =5\t+2}`));
+      emitMessage(mockWs, Buffer.from(`${subId} D =5\t+2}`));
 
       expect(handler).toHaveBeenLastCalledWith({
         id: subId,
@@ -406,17 +494,14 @@ describe('WebSocketManager', () => {
 
       const subId = wsManager.subscribe('ticker');
       // Previous: {"price":100,"old":true}
-      mockWs.emit(
-        'message',
-        Buffer.from(`${subId} A {"price":100,"old":true}`),
-      );
+      emitMessage(mockWs, Buffer.from(`${subId} A {"price":100,"old":true}`));
 
       // Delta: =13 copies {"price":100, then -11 skips "old":true, then +} to close
       // =13 copies: {"price":100,
       // -11 skips: "old":true
       // +"new":false} inserts: "new":false}
       // Result: {"price":100,"new":false}
-      mockWs.emit('message', Buffer.from(`${subId} D =13\t-11\t+"new":false}`));
+      emitMessage(mockWs, Buffer.from(`${subId} D =13\t-11\t+"new":false}`));
 
       expect(handler).toHaveBeenLastCalledWith({
         id: subId,
@@ -434,7 +519,7 @@ describe('WebSocketManager', () => {
       // Chars:     0123456789012345678901234
       //            {"foo":"bar","baz":123}
       // Length: 23 chars
-      mockWs.emit('message', Buffer.from(`${subId} A {"foo":"bar","baz":123}`));
+      emitMessage(mockWs, Buffer.from(`${subId} A {"foo":"bar","baz":123}`));
 
       // Mixed delta: copy 13, skip 3, insert new text, copy rest
       // =13 copies positions 0-12: {"foo":"bar",
@@ -447,7 +532,7 @@ describe('WebSocketManager', () => {
       // Previous: {"a":1,"b":2}
       // Chars:     0123456789012
       // Length: 13 chars
-      mockWs.emit('message', Buffer.from(`${subId} A {"a":1,"b":2}`));
+      emitMessage(mockWs, Buffer.from(`${subId} A {"a":1,"b":2}`));
 
       // Delta to change "b":2 to "c":3
       // =6 copies positions 0-5: {"a":1
@@ -459,7 +544,7 @@ describe('WebSocketManager', () => {
       // -6 skips: ,"b":2
       // +,"c":3} inserts the new ending
       // Result: {"a":1,"c":3}
-      mockWs.emit('message', Buffer.from(`${subId} D =6\t-6\t+,"c":3}`));
+      emitMessage(mockWs, Buffer.from(`${subId} D =6\t-6\t+,"c":3}`));
 
       expect(handler).toHaveBeenLastCalledWith({
         id: subId,
@@ -474,12 +559,12 @@ describe('WebSocketManager', () => {
 
       const subId = wsManager.subscribe('ticker');
       // Previous: {"text":"hi"}
-      mockWs.emit('message', Buffer.from(`${subId} A {"text":"hi"}`));
+      emitMessage(mockWs, Buffer.from(`${subId} A {"text":"hi"}`));
 
       // Delta inserts URL-encoded content
       // =9 copies: {"text":"
       // +hello%20world"} inserts: hello world"} (URL decoded, %20 -> space)
-      mockWs.emit('message', Buffer.from(`${subId} D =9\t+hello%20world"}`));
+      emitMessage(mockWs, Buffer.from(`${subId} D =9\t+hello%20world"}`));
 
       expect(handler).toHaveBeenLastCalledWith({
         id: subId,
@@ -494,12 +579,12 @@ describe('WebSocketManager', () => {
 
       const subId = wsManager.subscribe('ticker');
       // Previous: {"text":"hi"}
-      mockWs.emit('message', Buffer.from(`${subId} A {"text":"hi"}`));
+      emitMessage(mockWs, Buffer.from(`${subId} A {"text":"hi"}`));
 
       // + signs in content become spaces (URL encoding)
       // =9 copies: {"text":"
       // +hello+world"} inserts: hello world"} (+ -> space)
-      mockWs.emit('message', Buffer.from(`${subId} D =9\t+hello+world"}`));
+      emitMessage(mockWs, Buffer.from(`${subId} D =9\t+hello+world"}`));
 
       expect(handler).toHaveBeenLastCalledWith({
         id: subId,
@@ -514,7 +599,7 @@ describe('WebSocketManager', () => {
 
       const subId = wsManager.subscribe('ticker');
       // Send delta message without a previous Answer
-      mockWs.emit('message', Buffer.from(`${subId} D =10\t+new}`));
+      emitMessage(mockWs, Buffer.from(`${subId} D =10\t+new}`));
 
       expect(errorHandler).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -529,13 +614,13 @@ describe('WebSocketManager', () => {
 
       const subId = wsManager.subscribe('ticker');
       // Previous: {"a":1}
-      mockWs.emit('message', Buffer.from(`${subId} A {"a":1}`));
+      emitMessage(mockWs, Buffer.from(`${subId} A {"a":1}`));
 
       // Delta with unknown instruction 'X5' should be skipped
       // =5 copies: {"a":
       // X5 is unknown, skip it
       // +2} inserts: 2}
-      mockWs.emit('message', Buffer.from(`${subId} D =5\t*unknown\t+2}`));
+      emitMessage(mockWs, Buffer.from(`${subId} D =5\t*unknown\t+2}`));
 
       expect(handler).toHaveBeenLastCalledWith({
         id: subId,
@@ -552,13 +637,13 @@ describe('WebSocketManager', () => {
 
       const subId = wsManager.subscribe('ticker');
       // Establish previous response
-      mockWs.emit('message', Buffer.from(`${subId} A {"price":100}`));
+      emitMessage(mockWs, Buffer.from(`${subId} A {"price":100}`));
 
       // Send complete message to clean up
-      mockWs.emit('message', Buffer.from(`${subId} C {}`));
+      emitMessage(mockWs, Buffer.from(`${subId} C {}`));
 
       // Now try to send delta - should fail because previous was cleaned up
-      mockWs.emit('message', Buffer.from(`${subId} D =10\t+50}`));
+      emitMessage(mockWs, Buffer.from(`${subId} D =10\t+50}`));
 
       expect(errorHandler).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -573,10 +658,10 @@ describe('WebSocketManager', () => {
 
       const subId = wsManager.subscribe('ticker');
       // Send Answer - should be stored
-      mockWs.emit('message', Buffer.from(`${subId} A {"price":100}`));
+      emitMessage(mockWs, Buffer.from(`${subId} A {"price":100}`));
 
       // Send Delta - should work because Answer was stored
-      mockWs.emit('message', Buffer.from(`${subId} D =10\t+50}`));
+      emitMessage(mockWs, Buffer.from(`${subId} D =10\t+50}`));
 
       expect(handler).toHaveBeenCalledTimes(2);
       expect(handler).toHaveBeenLastCalledWith({
@@ -592,10 +677,10 @@ describe('WebSocketManager', () => {
 
       const subId = wsManager.subscribe('ticker');
       // Send Answer: {"price":100}
-      mockWs.emit('message', Buffer.from(`${subId} A {"price":100}`));
+      emitMessage(mockWs, Buffer.from(`${subId} A {"price":100}`));
 
       // Send Delta to change to {"price":150}
-      mockWs.emit('message', Buffer.from(`${subId} D =10\t+50}`));
+      emitMessage(mockWs, Buffer.from(`${subId} D =10\t+50}`));
 
       // Send another Delta based on {"price":150} -> {"price":200}
       // Previous: {"price":150}
@@ -614,7 +699,7 @@ describe('WebSocketManager', () => {
       // -1 skips: 5
       // +99} inserts: 99}
       // Result: {"price":199}
-      mockWs.emit('message', Buffer.from(`${subId} D =10\t-1\t+99}`));
+      emitMessage(mockWs, Buffer.from(`${subId} D =10\t-1\t+99}`));
 
       expect(handler).toHaveBeenLastCalledWith({
         id: subId,
@@ -629,10 +714,10 @@ describe('WebSocketManager', () => {
 
       const subId = wsManager.subscribe('ticker');
       // Previous: {"a":1}
-      mockWs.emit('message', Buffer.from(`${subId} A {"a":1}`));
+      emitMessage(mockWs, Buffer.from(`${subId} A {"a":1}`));
 
       // Delta with empty segments (double tabs)
-      mockWs.emit('message', Buffer.from(`${subId} D =5\t\t+2}`));
+      emitMessage(mockWs, Buffer.from(`${subId} D =5\t\t+2}`));
 
       expect(handler).toHaveBeenLastCalledWith({
         id: subId,
@@ -646,7 +731,7 @@ describe('WebSocketManager', () => {
     it('should clear all previousResponses on disconnect', async () => {
       const connectPromise = wsManager.connect('test-session-token');
       mockWs.setReadyState(mockWs.OPEN);
-      mockWs.emit('open');
+      emitOpen(mockWs);
       await connectPromise;
 
       const errorHandler = jest.fn();
@@ -654,7 +739,7 @@ describe('WebSocketManager', () => {
 
       const subId = wsManager.subscribe('ticker');
       // Establish previous response
-      mockWs.emit('message', Buffer.from(`${subId} A {"price":100}`));
+      emitMessage(mockWs, Buffer.from(`${subId} A {"price":100}`));
 
       // Disconnect
       wsManager.disconnect();
@@ -665,13 +750,13 @@ describe('WebSocketManager', () => {
       wsManager = new WebSocketManager(mockWsFactory);
       const reconnectPromise = wsManager.connect('test-session-token');
       mockWs.setReadyState(mockWs.OPEN);
-      mockWs.emit('open');
+      emitOpen(mockWs);
       await reconnectPromise;
 
       wsManager.on('error', errorHandler);
 
       // Try to send delta on same subId - should fail because previous was cleared
-      mockWs.emit('message', Buffer.from(`${subId} D =10\t+50}`));
+      emitMessage(mockWs, Buffer.from(`${subId} D =10\t+50}`));
 
       expect(errorHandler).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -685,7 +770,7 @@ describe('WebSocketManager', () => {
     beforeEach(async () => {
       const connectPromise = wsManager.connect('test-session-token');
       mockWs.setReadyState(mockWs.OPEN);
-      mockWs.emit('open');
+      emitOpen(mockWs);
       await connectPromise;
     });
 
@@ -694,8 +779,8 @@ describe('WebSocketManager', () => {
       wsManager.on('error', errorHandler);
 
       const subId = wsManager.subscribe('invalid');
-      mockWs.emit(
-        'message',
+      emitMessage(
+        mockWs,
         Buffer.from(`${subId} E {"message":"Unknown topic"}`),
       );
 
@@ -712,16 +797,51 @@ describe('WebSocketManager', () => {
       wsManager.on('error', errorHandler);
 
       const error = new Error('Network error');
-      mockWs.emit('error', error);
+      emitError(mockWs, error);
 
       expect(errorHandler).toHaveBeenCalledWith(error);
+    });
+
+    it('should handle error events with message but no error object', () => {
+      const errorHandler = jest.fn();
+      wsManager.on('error', errorHandler);
+
+      // Emit error event with message but no error object
+      const event: WebSocketErrorEvent = {
+        type: 'error',
+        message: 'Connection reset',
+      };
+      mockWs.emit('error', event);
+
+      expect(errorHandler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'Connection reset',
+        }),
+      );
+    });
+
+    it('should handle error events with neither error nor message', () => {
+      const errorHandler = jest.fn();
+      wsManager.on('error', errorHandler);
+
+      // Emit error event with no error or message
+      const event: WebSocketErrorEvent = {
+        type: 'error',
+      };
+      mockWs.emit('error', event);
+
+      expect(errorHandler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'Unknown WebSocket error',
+        }),
+      );
     });
 
     it('should handle malformed messages gracefully', () => {
       const errorHandler = jest.fn();
       wsManager.on('error', errorHandler);
 
-      mockWs.emit('message', Buffer.from('not a valid message'));
+      emitMessage(mockWs, Buffer.from('not a valid message'));
 
       expect(errorHandler).toHaveBeenCalled();
     });
@@ -731,7 +851,7 @@ describe('WebSocketManager', () => {
       wsManager.on('error', errorHandler);
 
       // Valid format but invalid JSON payload
-      mockWs.emit('message', Buffer.from('1 A {invalid json}'));
+      emitMessage(mockWs, Buffer.from('1 A {invalid json}'));
 
       expect(errorHandler).toHaveBeenCalled();
     });
@@ -751,7 +871,7 @@ describe('WebSocketManager', () => {
     it('should throw if already connected', async () => {
       const connectPromise = wsManager.connect('test-session-token');
       mockWs.setReadyState(mockWs.OPEN);
-      mockWs.emit('open');
+      emitOpen(mockWs);
       await connectPromise;
 
       // Try to connect again
@@ -770,6 +890,128 @@ describe('WebSocketManager', () => {
       expect(() => {
         wsManager.unsubscribe(1);
       }).toThrow('Not connected');
+    });
+  });
+
+  describe('heartbeat mechanism', () => {
+    beforeEach(() => {
+      // Fake timers including Date.now() for heartbeat calculations
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('should emit error and disconnect after 40s with no messages', async () => {
+      const errorHandler = jest.fn();
+
+      const connectPromise = wsManager.connect('test-cookie');
+      mockWs.setReadyState(mockWs.OPEN);
+      emitOpen(mockWs);
+      await connectPromise;
+
+      wsManager.on('error', errorHandler);
+
+      // Advance time by 40 seconds without any messages
+      // First check at 20s should pass (only 20s elapsed < 40s timeout)
+      await jest.advanceTimersByTimeAsync(20_000);
+      expect(wsManager.getStatus()).toBe(ConnectionStatus.CONNECTED);
+
+      // Second check at 40s should trigger timeout (40s elapsed >= 40s timeout)
+      await jest.advanceTimersByTimeAsync(20_000);
+
+      expect(errorHandler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: expect.stringContaining('Connection timeout'),
+        }),
+      );
+      expect(wsManager.getStatus()).toBe(ConnectionStatus.DISCONNECTED);
+    });
+
+    it('should reset timeout when message is received', async () => {
+      const errorHandler = jest.fn();
+
+      const connectPromise = wsManager.connect('test-cookie');
+      mockWs.setReadyState(mockWs.OPEN);
+      emitOpen(mockWs);
+      await connectPromise;
+
+      wsManager.on('error', errorHandler);
+
+      const subId = wsManager.subscribe('ticker');
+
+      // Advance time by 30 seconds
+      await jest.advanceTimersByTimeAsync(30_000);
+
+      // Send a message - this should reset the timeout
+      emitMessage(mockWs, Buffer.from(`${subId} A {"price":100}`));
+
+      // Advance another 30 seconds (total 60s, but only 30s since last message)
+      await jest.advanceTimersByTimeAsync(30_000);
+
+      // Should NOT have timed out because message reset the timer
+      expect(errorHandler).not.toHaveBeenCalled();
+      expect(wsManager.getStatus()).toBe(ConnectionStatus.CONNECTED);
+    });
+
+    it('should start heartbeat on connect', async () => {
+      const errorHandler = jest.fn();
+
+      const connectPromise = wsManager.connect('test-cookie');
+      mockWs.setReadyState(mockWs.OPEN);
+      emitOpen(mockWs);
+      await connectPromise;
+
+      wsManager.on('error', errorHandler);
+
+      // Heartbeat checks every 20s, timeout is 40s
+      // After 20s, first check happens - should still be ok (only 20s elapsed)
+      await jest.advanceTimersByTimeAsync(20_000);
+      expect(wsManager.getStatus()).toBe(ConnectionStatus.CONNECTED);
+
+      // After another 20s (40s total), timeout should trigger
+      await jest.advanceTimersByTimeAsync(20_000);
+      expect(wsManager.getStatus()).toBe(ConnectionStatus.DISCONNECTED);
+      expect(errorHandler).toHaveBeenCalled();
+    });
+
+    it('should stop heartbeat on disconnect', async () => {
+      const errorHandler = jest.fn();
+
+      const connectPromise = wsManager.connect('test-cookie');
+      mockWs.setReadyState(mockWs.OPEN);
+      emitOpen(mockWs);
+      await connectPromise;
+
+      wsManager.on('error', errorHandler);
+
+      // Disconnect
+      wsManager.disconnect();
+
+      // Advance time well past timeout
+      await jest.advanceTimersByTimeAsync(60_000);
+
+      // Should NOT emit any error because heartbeat was stopped
+      expect(errorHandler).not.toHaveBeenCalled();
+    });
+
+    it('should log warning when connection is considered dead', async () => {
+      const errorHandler = jest.fn();
+
+      const connectPromise = wsManager.connect('test-cookie');
+      mockWs.setReadyState(mockWs.OPEN);
+      emitOpen(mockWs);
+      await connectPromise;
+
+      wsManager.on('error', errorHandler);
+
+      // Advance time to exactly timeout (2 heartbeat checks at 20s each)
+      await jest.advanceTimersByTimeAsync(40_000);
+
+      expect(logger.api.warn).toHaveBeenCalledWith(
+        expect.stringContaining('no message received in 40s'),
+      );
     });
   });
 });

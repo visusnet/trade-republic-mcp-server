@@ -166,7 +166,29 @@ export type WebSocketFactory = (
   options?: WebSocketOptions,
 ) => WebSocket;
 
-/** WebSocket interface for dependency injection */
+/** WebSocket event types for undici/browser API */
+export interface WebSocketOpenEvent {
+  type: 'open';
+}
+
+export interface WebSocketMessageEvent {
+  type: 'message';
+  data: string | Buffer;
+}
+
+export interface WebSocketCloseEvent {
+  type: 'close';
+  code: number;
+  reason: string;
+}
+
+export interface WebSocketErrorEvent {
+  type: 'error';
+  error?: Error;
+  message?: string;
+}
+
+/** WebSocket interface for dependency injection (undici/browser API) */
 export interface WebSocket {
   readonly readyState: number;
   readonly OPEN: number;
@@ -175,11 +197,26 @@ export interface WebSocket {
   readonly CLOSING: number;
   send(data: string): void;
   close(): void;
-  on(event: 'open', listener: () => void): this;
-  on(event: 'message', listener: (data: Buffer | string) => void): this;
-  on(event: 'error', listener: (error: Error) => void): this;
-  on(event: 'close', listener: (code: number, reason: Buffer) => void): this;
-  removeAllListeners(): this;
+  addEventListener(
+    event: 'open',
+    listener: (event: WebSocketOpenEvent) => void,
+  ): void;
+  addEventListener(
+    event: 'message',
+    listener: (event: WebSocketMessageEvent) => void,
+  ): void;
+  addEventListener(
+    event: 'error',
+    listener: (event: WebSocketErrorEvent) => void,
+  ): void;
+  addEventListener(
+    event: 'close',
+    listener: (event: WebSocketCloseEvent) => void,
+  ): void;
+  removeEventListener(
+    event: string,
+    listener: (...args: unknown[]) => void,
+  ): void;
 }
 
 /** HTTP fetch function type */
