@@ -10,8 +10,22 @@
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 
+import { mockLogger } from '@test/loggerMock';
 import { RiskService } from '../services/RiskService';
 import { RiskManagementToolRegistry } from './RiskManagementToolRegistry';
+
+// Mock logger to suppress output during tests
+mockLogger();
+jest.mock('../../logger', () => ({
+  logger: {
+    tools: {
+      info: jest.fn(),
+      error: jest.fn(),
+      warn: jest.fn(),
+      debug: jest.fn(),
+    },
+  },
+}));
 
 describe('RiskManagementToolRegistry', () => {
   let mockServer: McpServer;
