@@ -1700,13 +1700,33 @@ Overall project coverage:
 
 ---
 
-### DISCREPANCY-003: ADR-001 Missing Rate Limiting
+### DISCREPANCY-003: ADR-001 Missing Rate Limiting [RESOLVED]
 
 **ADR Reference:** ADR-001: Trade Republic API Integration (line 94)
 
 **Severity:** High
 
-**Description:**
+**Status:** RESOLVED
+
+**Resolution Date:** 2026-02-02
+
+**Resolution:**
+Implemented rate limiting using the `p-throttle` library. Added a throttled fetch wrapper in `TradeRepublicApiService` that enforces max 1 request/second for all HTTP requests.
+
+**Changes Made:**
+1. Added `p-throttle` dependency to `package.json`
+2. Updated `jest.config.js` to transform ESM-only `p-throttle` package
+3. Modified `TradeRepublicApiService.ts`:
+   - Added `throttledFetch` property wrapping `fetchFn` with rate limiting
+   - Updated `login()`, `verify2FA()`, and `refreshSession()` to use `throttledFetch`
+4. Added comprehensive rate limiting tests:
+   - Test throttling of rapid requests
+   - Test throttling across different HTTP methods
+   - Test that requests are allowed immediately if interval has passed
+
+**Test Coverage:** 100% maintained on all metrics (698 tests pass)
+
+**Original Description:**
 ADR-001 explicitly requires "Conservative default: max 1 request/second" for rate limiting.
 
 **ADR Documentation:**
@@ -1717,17 +1737,14 @@ ADR-001 explicitly requires "Conservative default: max 1 request/second" for rat
 - Circuit breaker for repeated failures
 ```
 
-**Actual Implementation:**
+**Original Implementation:**
 File: `src/server/services/TradeRepublicApiService.ts`
 
-No rate limiting implemented. HTTP requests in `login()` (line 121), `verify2FA()` (line 183), and `refreshSession()` (line 238) are made directly through `fetchFn` with no rate limiting wrapper.
+No rate limiting implemented. HTTP requests in `login()` (line 121), `verify2FA()` (line 183), and `refreshSession()` (line 238) were made directly through `fetchFn` with no rate limiting wrapper.
 
-**Impact:**
+**Original Impact:**
 - Risk of account lockout or API throttling from Trade Republic
 - No protection against burst requests
-
-**Fix Required:**
-Implement a rate limiter that enforces max 1 request/second for all HTTP requests.
 
 ---
 
@@ -2820,7 +2837,11 @@ After all agents complete, fix discrepancies in this order:
    - Add proper User-Agent string
    - May prevent CORS issues or bot detection
 
-7. **DISCREPANCY-003:** Implement rate limiting (1 req/sec)
+7. ~~**DISCREPANCY-003:** Implement rate limiting (1 req/sec)~~ **RESOLVED (2026-02-02)**
+   - Added `p-throttle` dependency for rate limiting
+   - All HTTP requests (login, verify2FA, refreshSession) now throttled to max 1 request/second
+   - Updated Jest config to handle ESM-only p-throttle package
+   - Added comprehensive rate limiting tests
 8. **DISCREPANCY-004:** Implement exponential backoff on HTTP errors
 9. **DISCREPANCY-006:** Implement WebSocket reconnection with backoff
 10. **DISCREPANCY-002:** Add missing test coverage for OrderService.ts

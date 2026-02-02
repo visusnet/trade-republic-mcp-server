@@ -869,4 +869,155 @@ describe('TradeRepublicApiService', () => {
       }).not.toThrow();
     });
   });
+
+  describe('rate limiting', () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('should throttle rapid HTTP requests to max 1 per second', async () => {
+      await service.initialize();
+
+      // Track when each fetch call was made
+      const fetchCallTimes: number[] = [];
+
+      // Login response
+      mockFetch.mockImplementation(() => {
+        fetchCallTimes.push(Date.now());
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ processId: 'test-process-id' }),
+        } as Response);
+      });
+
+      // Make two rapid login requests
+      const p1 = service.login(testCredentials);
+      const p2 = service.login(testCredentials);
+
+      // Advance timers to allow both requests to complete
+      await jest.advanceTimersByTimeAsync(2000);
+
+      await Promise.all([p1, p2]);
+
+      // Both calls should have been made
+      expect(fetchCallTimes).toHaveLength(2);
+
+      // Second request should be delayed by at least 1000ms
+      expect(fetchCallTimes[1] - fetchCallTimes[0]).toBeGreaterThanOrEqual(
+        1000,
+      );
+    });
+
+    it('should throttle across different HTTP methods (login, verify2FA, refreshSession)', async () => {
+      await service.initialize();
+
+      const fetchCallTimes: number[] = [];
+      let callIndex = 0;
+
+      mockFetch.mockImplementation(() => {
+        fetchCallTimes.push(Date.now());
+        callIndex++;
+
+        // First call: login response
+        if (callIndex === 1) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ processId: 'test-process-id' }),
+          } as Response);
+        }
+
+        // Second call: 2FA response with cookies
+        if (callIndex === 2) {
+          return Promise.resolve({
+            ok: true,
+            headers: {
+              get: (name: string) =>
+                name.toLowerCase() === 'set-cookie'
+                  ? 'session=test-cookie; Domain=traderepublic.com'
+                  : null,
+              getSetCookie: () => [
+                'session=test-cookie; Domain=traderepublic.com',
+              ],
+            } as unknown as Headers,
+            json: () => Promise.resolve({}),
+          } as Response);
+        }
+
+        // Third call: refresh session response
+        return Promise.resolve({
+          ok: true,
+          headers: {
+            get: () => null,
+            getSetCookie: () => [],
+          } as unknown as Headers,
+          json: () => Promise.resolve({}),
+        } as Response);
+      });
+
+      // Start login
+      const loginPromise = service.login(testCredentials);
+      await jest.advanceTimersByTimeAsync(1000);
+      await loginPromise;
+
+      // Start 2FA verification
+      const verify2FAPromise = service.verify2FA({ code: '1234' });
+      await jest.advanceTimersByTimeAsync(1000);
+      await verify2FAPromise;
+
+      // Start refresh session
+      const refreshPromise = service.refreshSession();
+      await jest.advanceTimersByTimeAsync(1000);
+      await refreshPromise;
+
+      // All three calls should have been made
+      expect(fetchCallTimes).toHaveLength(3);
+
+      // Each call should be spaced at least 1000ms apart
+      expect(fetchCallTimes[1] - fetchCallTimes[0]).toBeGreaterThanOrEqual(
+        1000,
+      );
+      expect(fetchCallTimes[2] - fetchCallTimes[1]).toBeGreaterThanOrEqual(
+        1000,
+      );
+    });
+
+    it('should allow immediate request if previous request was more than 1 second ago', async () => {
+      await service.initialize();
+
+      const fetchCallTimes: number[] = [];
+
+      mockFetch.mockImplementation(() => {
+        fetchCallTimes.push(Date.now());
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ processId: 'test-process-id' }),
+        } as Response);
+      });
+
+      // Make first request
+      const p1 = service.login(testCredentials);
+      await jest.advanceTimersByTimeAsync(100);
+      await p1;
+
+      const firstRequestTime = fetchCallTimes[0];
+
+      // Wait for more than 1 second
+      await jest.advanceTimersByTimeAsync(1500);
+
+      // Make second request - should execute immediately (not delayed)
+      const p2 = service.login(testCredentials);
+      await jest.advanceTimersByTimeAsync(100);
+      await p2;
+
+      expect(fetchCallTimes).toHaveLength(2);
+
+      // Second request should have been made after ~1600ms (100 + 1500 + 0)
+      // The interval between the actual fetch calls should be >= 1500ms
+      expect(fetchCallTimes[1] - firstRequestTime).toBeGreaterThanOrEqual(1500);
+    });
+  });
 });

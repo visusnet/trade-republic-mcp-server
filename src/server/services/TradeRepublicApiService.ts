@@ -5,6 +5,8 @@
  * Handles authentication, session management, and WebSocket communication.
  */
 
+import pThrottle from 'p-throttle';
+
 import { logger } from '../../logger';
 import type { CryptoManager } from './TradeRepublicApiService.crypto';
 import {
@@ -57,11 +59,19 @@ export class TradeRepublicApiService {
   private errorHandlers: ((error: Error | WebSocketMessage) => void)[] = [];
   private initialized = false;
 
+  /** Throttled fetch function - max 1 request per second (per ADR-001) */
+  private readonly throttledFetch: FetchFunction;
+
   constructor(
     private readonly crypto: CryptoManager,
     private readonly ws: WebSocketManager,
     private readonly fetchFn: FetchFunction,
   ) {
+    // Rate limit: 1 request per 1000ms (per ADR-001)
+    const throttle = pThrottle({ limit: 1, interval: 1000 });
+    this.throttledFetch = throttle((...args: Parameters<FetchFunction>) =>
+      this.fetchFn(...args),
+    ) as FetchFunction;
     // Forward WebSocket events
     this.ws.on('message', (message: WebSocketMessage) => {
       this.messageHandlers.forEach((handler) => {
@@ -115,7 +125,7 @@ export class TradeRepublicApiService {
 
     logger.api.info(`Initiating login for ${phoneNumber.substring(0, 6)}...`);
 
-    const response = await this.fetchFn(`${TR_API_URL}/auth/web/login`, {
+    const response = await this.throttledFetch(`${TR_API_URL}/auth/web/login`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -177,7 +187,7 @@ export class TradeRepublicApiService {
       this.keyPair.publicKeyPem,
     );
 
-    const response = await this.fetchFn(
+    const response = await this.throttledFetch(
       `${TR_API_URL}/auth/web/login/${this.processId}/${code}`,
       {
         method: 'POST',
@@ -234,12 +244,15 @@ export class TradeRepublicApiService {
 
     logger.api.info('Refreshing session');
 
-    const response = await this.fetchFn(`${TR_API_URL}/auth/web/session`, {
-      method: 'GET',
-      headers: {
-        Cookie: this.getCookieHeader(),
+    const response = await this.throttledFetch(
+      `${TR_API_URL}/auth/web/session`,
+      {
+        method: 'GET',
+        headers: {
+          Cookie: this.getCookieHeader(),
+        },
       },
-    });
+    );
 
     if (!response.ok) {
       const errorData = await response.json();

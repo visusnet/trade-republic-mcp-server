@@ -18,7 +18,16 @@ export default {
         },
       },
     ],
+    // Transform ESM-only packages like p-throttle
+    'node_modules/p-throttle/.+\\.js$': [
+      'ts-jest',
+      {
+        useESM: true,
+      },
+    ],
   },
+  // Transform ESM-only packages like p-throttle
+  transformIgnorePatterns: ['node_modules/(?!(p-throttle)/)'],
   testMatch: ['**/*.spec.ts'],
   collectCoverageFrom: [
     'src/**/*.ts',
