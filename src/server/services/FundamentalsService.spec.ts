@@ -2,32 +2,38 @@
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 
 import { mockLogger } from '@test/loggerMock';
+import type { YahooQuoteSummaryResult } from './FundamentalsService.types';
 
 const logger = mockLogger();
 jest.mock('../../logger', () => ({
   logger,
 }));
 
-import {
-  FundamentalsService,
-  type FundamentalsServiceDependencies,
-} from './FundamentalsService';
-import {
-  FundamentalsServiceError,
-  type YahooQuoteSummaryResult,
-} from './FundamentalsService.types';
+const mockQuoteSummary =
+  jest.fn<
+    (
+      symbol: string,
+      options: { modules: string[] },
+    ) => Promise<YahooQuoteSummaryResult>
+  >();
+
+// Mock yahoo-finance2 module
+jest.mock('yahoo-finance2', () => ({
+  __esModule: true,
+  default: {
+    quoteSummary: (symbol: string, options: { modules: string[] }) =>
+      mockQuoteSummary(symbol, options),
+  },
+}));
+
+import { FundamentalsService } from './FundamentalsService';
+import { FundamentalsServiceError } from './FundamentalsService.types';
 import type { SymbolMapper } from './SymbolMapper';
 import type { GetFundamentalsRequest } from './FundamentalsService.request';
 
 describe('FundamentalsService', () => {
   let service: FundamentalsService;
   let mockSymbolMapper: jest.Mocked<SymbolMapper>;
-  let mockQuoteSummary: jest.Mock<
-    (
-      symbol: string,
-      options: { modules: string[] },
-    ) => Promise<YahooQuoteSummaryResult>
-  >;
 
   beforeEach(() => {
     mockSymbolMapper = {
@@ -35,14 +41,9 @@ describe('FundamentalsService', () => {
       clearCache: jest.fn(),
     } as unknown as jest.Mocked<SymbolMapper>;
 
-    mockQuoteSummary = jest.fn();
+    mockQuoteSummary.mockReset();
 
-    const deps: FundamentalsServiceDependencies = {
-      symbolMapper: mockSymbolMapper,
-      quoteSummaryFn: mockQuoteSummary,
-    };
-
-    service = new FundamentalsService(deps);
+    service = new FundamentalsService(mockSymbolMapper);
   });
 
   describe('getFundamentals', () => {
@@ -548,15 +549,6 @@ describe('FundamentalsService', () => {
       expect(result.earnings).toBeUndefined();
       expect(result.valuation).toBeUndefined();
       expect(result.recommendations).toBeUndefined();
-    });
-  });
-
-  describe('constructor', () => {
-    it('should use default yahoo-finance2 when no quoteSummaryFn provided', () => {
-      const serviceWithDefaults = new FundamentalsService({
-        symbolMapper: mockSymbolMapper,
-      });
-      expect(serviceWithDefaults).toBeInstanceOf(FundamentalsService);
     });
   });
 });

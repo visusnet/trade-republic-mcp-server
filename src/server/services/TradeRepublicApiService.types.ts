@@ -99,24 +99,6 @@ export interface KeyPair {
   publicKeyPem: string;
 }
 
-/** User credentials for login */
-export interface Credentials {
-  /** Phone number in E.164 format (e.g., +49123456789) */
-  phoneNumber: string;
-  /** 4-digit PIN */
-  pin: string;
-}
-
-/** Session tokens (deprecated - kept for compatibility) */
-export interface SessionTokens {
-  /** Refresh token for obtaining new session tokens */
-  refreshToken: string;
-  /** Session token for WebSocket authentication */
-  sessionToken: string;
-  /** Token expiration timestamp (milliseconds) */
-  expiresAt: number;
-}
-
 /** Stored cookie from Set-Cookie header */
 export interface StoredCookie {
   /** Cookie name */

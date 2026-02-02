@@ -26,6 +26,7 @@ export type YahooQuoteSummaryModule =
 
 /**
  * Subset of Yahoo Finance quoteSummary result.
+ * Used internally for type-safe handling of Yahoo Finance API responses.
  */
 export interface YahooQuoteSummaryResult {
   assetProfile?: {
@@ -84,14 +85,4 @@ export interface YahooQuoteSummaryResult {
     shortName?: string;
     longName?: string;
   };
-}
-
-/**
- * Interface for Yahoo Finance quoteSummary function.
- */
-export interface YahooQuoteSummaryFn {
-  (
-    symbol: string,
-    options: { modules: YahooQuoteSummaryModule[] },
-  ): Promise<YahooQuoteSummaryResult>;
 }

@@ -18,7 +18,7 @@ import {
 } from './SentimentService.response';
 import {
   SentimentServiceError,
-  type SentimentAnalyzeFn,
+  type SentimentResult,
 } from './SentimentService.types';
 import { FINANCE_SENTIMENT_WORDS } from './SentimentService.wordlist';
 
@@ -33,34 +33,14 @@ const HIGH_INTENSITY_THRESHOLD = 3;
 const MEDIUM_INTENSITY_THRESHOLD = 1;
 
 /**
- * Default implementation using sentiment npm package with finance-specific words.
- */
-/* istanbul ignore next -- @preserve Untestable without actual sentiment library */
-function createDefaultSentimentAnalyze(): SentimentAnalyzeFn {
-  const sentimentLib = new Sentiment();
-  return (text: string) =>
-    sentimentLib.analyze(text, { extras: FINANCE_SENTIMENT_WORDS });
-}
-
-/**
- * Dependencies for SentimentService.
- */
-export interface SentimentServiceDependencies {
-  newsService: NewsService;
-  sentimentAnalyzeFn?: SentimentAnalyzeFn;
-}
-
-/**
  * Service for analyzing sentiment.
  */
 export class SentimentService {
   private readonly newsService: NewsService;
-  private readonly sentimentAnalyzeFn: SentimentAnalyzeFn;
+  private readonly sentiment = new Sentiment();
 
-  constructor(deps: SentimentServiceDependencies) {
-    this.newsService = deps.newsService;
-    this.sentimentAnalyzeFn =
-      deps.sentimentAnalyzeFn ?? createDefaultSentimentAnalyze();
+  constructor(newsService: NewsService) {
+    this.newsService = newsService;
   }
 
   /**
@@ -94,7 +74,7 @@ export class SentimentService {
       throw new SentimentServiceError('Text cannot be empty');
     }
 
-    const sentimentResult = this.sentimentAnalyzeFn(text);
+    const sentimentResult = this.analyzeSentiment(text);
     const textSentiment = this.createTextSentiment(text, sentimentResult);
     const normalizedScore = this.normalizeScore(sentimentResult.comparative);
 
@@ -128,7 +108,7 @@ export class SentimentService {
     const comparativeScores: number[] = [];
 
     for (const article of newsData.articles) {
-      const sentimentResult = this.sentimentAnalyzeFn(article.title);
+      const sentimentResult = this.analyzeSentiment(article.title);
       analysis.push(this.createTextSentiment(article.title, sentimentResult));
       comparativeScores.push(sentimentResult.comparative);
     }
@@ -164,9 +144,13 @@ export class SentimentService {
     });
   }
 
+  private analyzeSentiment(text: string): SentimentResult {
+    return this.sentiment.analyze(text, { extras: FINANCE_SENTIMENT_WORDS });
+  }
+
   private createTextSentiment(
     text: string,
-    result: ReturnType<SentimentAnalyzeFn>,
+    result: SentimentResult,
   ): TextSentiment {
     return {
       text,

@@ -14,29 +14,26 @@ import {
   type GetNewsResponse,
   type NewsArticle,
 } from './NewsService.response';
-import {
-  NewsServiceError,
-  type YahooFinanceSearchWithNewsFn,
-} from './NewsService.types';
+import { NewsServiceError } from './NewsService.types';
 
 const DEFAULT_NEWS_LIMIT = 10;
 
 /**
- * Default implementation using yahoo-finance2.
+ * Yahoo Finance news item structure.
  */
-/* istanbul ignore next -- @preserve Untestable without network calls */
-function createDefaultSearchWithNews(): YahooFinanceSearchWithNewsFn {
-  return (query: string, options: { newsCount: number }) =>
-    // eslint-disable-next-line @typescript-eslint/no-deprecated
-    yahooFinance.search(query, options);
+interface YahooNewsItem {
+  title: string;
+  publisher: string;
+  link: string;
+  providerPublishTime: number;
+  thumbnail?: { resolutions: Array<{ url: string }> };
 }
 
 /**
- * Dependencies for NewsService.
+ * Yahoo Finance search result structure (subset for news).
  */
-export interface NewsServiceDependencies {
-  symbolMapper: SymbolMapper;
-  searchWithNewsFn?: YahooFinanceSearchWithNewsFn;
+interface YahooSearchResult {
+  news: YahooNewsItem[];
 }
 
 /**
@@ -44,12 +41,9 @@ export interface NewsServiceDependencies {
  */
 export class NewsService {
   private readonly symbolMapper: SymbolMapper;
-  private readonly searchWithNewsFn: YahooFinanceSearchWithNewsFn;
 
-  constructor(deps: NewsServiceDependencies) {
-    this.symbolMapper = deps.symbolMapper;
-    this.searchWithNewsFn =
-      deps.searchWithNewsFn ?? createDefaultSearchWithNews();
+  constructor(symbolMapper: SymbolMapper) {
+    this.symbolMapper = symbolMapper;
   }
 
   /**
@@ -64,23 +58,29 @@ export class NewsService {
     logger.api.info({ isin: request.isin, limit }, 'Fetching news');
 
     let symbol: string;
-    let newsData: Awaited<ReturnType<YahooFinanceSearchWithNewsFn>>;
+    let newsData: YahooSearchResult;
 
     try {
       symbol = await this.symbolMapper.isinToSymbol(request.isin);
-      newsData = await this.searchWithNewsFn(symbol, { newsCount: limit });
+      /* eslint-disable @typescript-eslint/no-deprecated, @typescript-eslint/await-thenable */
+      newsData = (await yahooFinance.search(symbol, {
+        newsCount: limit,
+      })) as YahooSearchResult;
+      /* eslint-enable @typescript-eslint/no-deprecated, @typescript-eslint/await-thenable */
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw new NewsServiceError(`Failed to get news: ${message}`);
     }
 
-    const articles: NewsArticle[] = newsData.news.map((item) => ({
-      title: item.title,
-      publisher: item.publisher,
-      link: item.link,
-      publishedAt: new Date(item.providerPublishTime * 1000).toISOString(),
-      thumbnail: item.thumbnail?.resolutions[0]?.url,
-    }));
+    const articles: NewsArticle[] = newsData.news.map(
+      (item: YahooNewsItem) => ({
+        title: item.title,
+        publisher: item.publisher,
+        link: item.link,
+        publishedAt: new Date(item.providerPublishTime * 1000).toISOString(),
+        thumbnail: item.thumbnail?.resolutions[0]?.url,
+      }),
+    );
 
     logger.api.debug(
       { isin: request.isin, symbol, count: articles.length },

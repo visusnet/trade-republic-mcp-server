@@ -23,7 +23,6 @@ import {
 } from './FundamentalsService.response';
 import {
   FundamentalsServiceError,
-  type YahooQuoteSummaryFn,
   type YahooQuoteSummaryModule,
   type YahooQuoteSummaryResult,
 } from './FundamentalsService.types';
@@ -46,33 +45,13 @@ const MODULE_MAP: Record<FundamentalsModule, YahooQuoteSummaryModule[]> = {
 };
 
 /**
- * Default implementation using yahoo-finance2.
- */
-/* istanbul ignore next -- @preserve Untestable without network calls */
-function createDefaultQuoteSummary(): YahooQuoteSummaryFn {
-  return (symbol: string, options: { modules: YahooQuoteSummaryModule[] }) =>
-    // eslint-disable-next-line @typescript-eslint/no-deprecated
-    yahooFinance.quoteSummary(symbol, options);
-}
-
-/**
- * Dependencies for FundamentalsService.
- */
-export interface FundamentalsServiceDependencies {
-  symbolMapper: SymbolMapper;
-  quoteSummaryFn?: YahooQuoteSummaryFn;
-}
-
-/**
  * Service for fetching fundamental data.
  */
 export class FundamentalsService {
   private readonly symbolMapper: SymbolMapper;
-  private readonly quoteSummaryFn: YahooQuoteSummaryFn;
 
-  constructor(deps: FundamentalsServiceDependencies) {
-    this.symbolMapper = deps.symbolMapper;
-    this.quoteSummaryFn = deps.quoteSummaryFn ?? createDefaultQuoteSummary();
+  constructor(symbolMapper: SymbolMapper) {
+    this.symbolMapper = symbolMapper;
   }
 
   /**
@@ -95,7 +74,11 @@ export class FundamentalsService {
       symbol = await this.symbolMapper.isinToSymbol(request.isin);
 
       const yahooModules = this.getYahooModules(modules);
-      data = await this.quoteSummaryFn(symbol, { modules: yahooModules });
+      /* eslint-disable @typescript-eslint/no-deprecated, @typescript-eslint/await-thenable */
+      data = (await yahooFinance.quoteSummary(symbol, {
+        modules: yahooModules,
+      })) as YahooQuoteSummaryResult;
+      /* eslint-enable @typescript-eslint/no-deprecated, @typescript-eslint/await-thenable */
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw new FundamentalsServiceError(

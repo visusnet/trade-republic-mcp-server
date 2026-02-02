@@ -160,9 +160,9 @@ BEST PRACTICES:
 
     // External data tools don't require authentication
     const symbolMapper = new SymbolMapper();
-    const newsService = new NewsService({ symbolMapper });
-    const sentimentService = new SentimentService({ newsService });
-    const fundamentalsService = new FundamentalsService({ symbolMapper });
+    const newsService = new NewsService(symbolMapper);
+    const sentimentService = new SentimentService(newsService);
+    const fundamentalsService = new FundamentalsService(symbolMapper);
 
     const externalDataToolRegistry = new ExternalDataToolRegistry(
       server,

@@ -32,24 +32,59 @@ export const PERIODS_PER_YEAR: Record<string, number> = {
   monthly: MONTHS_PER_YEAR,
 };
 
-// Internal result types
-export interface VolatilityResult {
-  daily: number;
-  annualized: number;
-}
+/**
+ * Internal result type schemas
+ *
+ * These schemas are used only for type derivation (via z.output<typeof Schema>).
+ * They are not exported because they are not used for runtime validation.
+ */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 
-export interface VaRResult {
-  parametric: number;
-  historical: number;
-  confidenceLevel: string;
-}
+/**
+ * Volatility calculation result schema.
+ */
+const VolatilityResultSchema = z.object({
+  daily: z
+    .number()
+    .describe('Daily volatility (standard deviation of log returns)'),
+  annualized: z.number().describe('Annualized volatility'),
+});
+type VolatilityResult = z.output<typeof VolatilityResultSchema>;
 
-export interface MaxDrawdownResult {
-  value: number;
-  percent: number;
-  peakIndex: number;
-  troughIndex: number;
-}
+/**
+ * Value at Risk calculation result schema.
+ */
+const VaRResultSchema = z.object({
+  parametric: z
+    .number()
+    .describe('Parametric VaR (negative value = expected loss)'),
+  historical: z
+    .number()
+    .describe('Historical VaR (negative value = expected loss)'),
+  confidenceLevel: z.string().describe('Confidence level used (0.95 or 0.99)'),
+});
+type VaRResult = z.output<typeof VaRResultSchema>;
+
+/**
+ * Maximum drawdown calculation result schema.
+ */
+const MaxDrawdownResultSchema = z.object({
+  value: z.number().describe('Maximum drawdown in absolute price terms'),
+  percent: z
+    .number()
+    .describe('Maximum drawdown as percentage (positive value)'),
+  peakIndex: z
+    .number()
+    .int()
+    .describe('Index of peak price in the price array'),
+  troughIndex: z
+    .number()
+    .int()
+    .describe('Index of trough price in the price array'),
+});
+type MaxDrawdownResult = z.output<typeof MaxDrawdownResultSchema>;
+
+export type { VolatilityResult, VaRResult, MaxDrawdownResult };
 
 // Request Schemas
 export const CalculatePositionSizeRequestSchema = z.object({

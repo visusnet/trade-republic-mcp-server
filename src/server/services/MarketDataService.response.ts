@@ -1,7 +1,7 @@
 /**
  * Market Data Service - Response Schemas
  *
- * Internal API response schemas use .passthrough() to allow additional fields from API.
+ * Internal API response schemas validate raw API responses.
  * Output response schemas define the structure returned to consumers.
  */
 
@@ -21,39 +21,35 @@ const numericString = z
 /**
  * Ticker API response schema (from Trade Republic ticker subscription).
  */
-export const TickerApiResponseSchema = z
-  .object({
-    bid: z.object({ price: numericString, size: numericString.optional() }),
-    ask: z.object({ price: numericString, size: numericString.optional() }),
-    last: z
-      .object({ price: numericString, time: z.string().optional() })
-      .optional(),
-    open: z.object({ price: numericString }).optional(),
-    pre: z.object({ price: numericString }).optional(),
-    qualityId: z.string().optional(),
-  })
-  .passthrough();
+export const TickerApiResponseSchema = z.object({
+  bid: z.object({ price: numericString, size: numericString.optional() }),
+  ask: z.object({ price: numericString, size: numericString.optional() }),
+  last: z
+    .object({ price: numericString, time: z.string().optional() })
+    .optional(),
+  open: z.object({ price: numericString }).optional(),
+  pre: z.object({ price: numericString }).optional(),
+  qualityId: z.string().optional(),
+});
 
 export type TickerApiResponse = z.output<typeof TickerApiResponseSchema>;
 
 /**
  * Aggregate history API response schema (from Trade Republic aggregateHistory subscription).
  */
-export const AggregateHistoryApiSchema = z
-  .object({
-    aggregates: z.array(
-      z.object({
-        time: z.number(),
-        open: numericString,
-        high: numericString,
-        low: numericString,
-        close: numericString,
-        volume: numericString.optional(),
-      }),
-    ),
-    resolution: z.number().optional(),
-  })
-  .passthrough();
+export const AggregateHistoryApiSchema = z.object({
+  aggregates: z.array(
+    z.object({
+      time: z.number(),
+      open: numericString,
+      high: numericString,
+      low: numericString,
+      close: numericString,
+      volume: numericString.optional(),
+    }),
+  ),
+  resolution: z.number().optional(),
+});
 
 export type AggregateHistoryApiResponse = z.output<
   typeof AggregateHistoryApiSchema
@@ -62,51 +58,47 @@ export type AggregateHistoryApiResponse = z.output<
 /**
  * Neon search API response schema (from Trade Republic neonSearch subscription).
  */
-export const NeonSearchApiSchema = z
-  .object({
-    results: z.array(
-      z.object({
-        isin: z.string(),
-        name: z.string(),
-        type: z.string().optional(),
-        tags: z.array(z.string()).optional(),
-      }),
-    ),
-  })
-  .passthrough();
+export const NeonSearchApiSchema = z.object({
+  results: z.array(
+    z.object({
+      isin: z.string(),
+      name: z.string(),
+      type: z.string().optional(),
+      tags: z.array(z.string()).optional(),
+    }),
+  ),
+});
 
 export type NeonSearchApiResponse = z.output<typeof NeonSearchApiSchema>;
 
 /**
  * Instrument API response schema (from Trade Republic instrument subscription).
  */
-export const InstrumentApiSchema = z
-  .object({
-    isin: z.string(),
-    name: z.string(),
-    shortName: z.string().optional(),
-    intlSymbol: z.string().optional(),
-    homeSymbol: z.string().optional(),
-    typeId: z.string().optional(),
-    wkn: z.string().optional(),
-    company: z
-      .object({
-        name: z.string(),
-        description: z.string().optional(),
-        countryOfOrigin: z.string().optional(),
-      })
-      .optional(),
-    exchanges: z
-      .array(
-        z.object({
-          exchangeId: z.string(),
-          name: z.string().optional(),
-        }),
-      )
-      .optional(),
-    tags: z.array(z.object({ id: z.string(), name: z.string() })).optional(),
-  })
-  .passthrough();
+export const InstrumentApiSchema = z.object({
+  isin: z.string(),
+  name: z.string(),
+  shortName: z.string().optional(),
+  intlSymbol: z.string().optional(),
+  homeSymbol: z.string().optional(),
+  typeId: z.string().optional(),
+  wkn: z.string().optional(),
+  company: z
+    .object({
+      name: z.string(),
+      description: z.string().optional(),
+      countryOfOrigin: z.string().optional(),
+    })
+    .optional(),
+  exchanges: z
+    .array(
+      z.object({
+        exchangeId: z.string(),
+        name: z.string().optional(),
+      }),
+    )
+    .optional(),
+  tags: z.array(z.object({ id: z.string(), name: z.string() })).optional(),
+});
 
 export type InstrumentApiResponse = z.output<typeof InstrumentApiSchema>;
 

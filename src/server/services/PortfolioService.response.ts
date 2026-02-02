@@ -2,7 +2,6 @@
  * Portfolio Service - Response Schemas
  *
  * Field names based on Trade Republic API research (pytr).
- * Schemas use passthrough() to allow additional fields from API.
  */
 
 import { z } from 'zod';
@@ -21,7 +20,6 @@ const PortfolioPositionSchema = z
     unrealisedAverageCost: z.number().optional(),
     realisedProfit: z.number().optional(),
   })
-  .passthrough()
   .transform((data) => ({
     instrumentId: data.instrumentId,
     netSize: data.netSize,
@@ -35,17 +33,15 @@ export type PortfolioPosition = z.output<typeof PortfolioPositionSchema>;
 /**
  * Portfolio response schema
  */
-export const GetPortfolioResponseSchema = z
-  .object({
-    positions: z.array(PortfolioPositionSchema),
-    netValue: z.number(),
-    referenceChangeProfit: z.number().optional(),
-    referenceChangeProfitPercent: z.number().optional(),
-    unrealisedProfit: z.number().optional(),
-    unrealisedProfitPercent: z.number().optional(),
-    unrealisedCost: z.number().optional(),
-  })
-  .passthrough();
+export const GetPortfolioResponseSchema = z.object({
+  positions: z.array(PortfolioPositionSchema),
+  netValue: z.number(),
+  referenceChangeProfit: z.number().optional(),
+  referenceChangeProfitPercent: z.number().optional(),
+  unrealisedProfit: z.number().optional(),
+  unrealisedProfitPercent: z.number().optional(),
+  unrealisedCost: z.number().optional(),
+});
 
 export type GetPortfolioResponse = z.output<typeof GetPortfolioResponseSchema>;
 
@@ -61,7 +57,6 @@ export const GetCashBalanceResponseSchema = z
     currencyId: z.string().optional(),
     currency: z.string().optional(),
   })
-  .passthrough()
   .transform((data) => ({
     availableCash: data.amount ?? data.availableCash ?? 0,
     currency: data.currencyId ?? data.currency ?? 'EUR',

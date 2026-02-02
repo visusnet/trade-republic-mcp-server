@@ -8,37 +8,55 @@ jest.mock('../../logger', () => ({
   logger,
 }));
 
-import { NewsService, type NewsServiceDependencies } from './NewsService';
-import {
-  NewsServiceError,
-  type YahooFinanceSearchWithNewsFn,
-} from './NewsService.types';
+interface YahooNewsItem {
+  title: string;
+  publisher: string;
+  link: string;
+  providerPublishTime: number;
+  thumbnail?: { resolutions: Array<{ url: string }> };
+}
+
+interface YahooSearchResult {
+  news: YahooNewsItem[];
+}
+
+const mockSearch =
+  jest.fn<
+    (
+      query: string,
+      options: { newsCount: number },
+    ) => Promise<YahooSearchResult>
+  >();
+
+jest.mock('yahoo-finance2', () => {
+  const mockYahooFinance = {
+    search: (query: string, options: { newsCount: number }) =>
+      mockSearch(query, options),
+  };
+  return {
+    __esModule: true,
+    default: mockYahooFinance,
+  };
+});
+
+import { NewsService } from './NewsService';
+import { NewsServiceError } from './NewsService.types';
 import type { SymbolMapper } from './SymbolMapper';
 import type { GetNewsRequest } from './NewsService.request';
-
-type NewsResult = Awaited<ReturnType<YahooFinanceSearchWithNewsFn>>;
 
 describe('NewsService', () => {
   let service: NewsService;
   let mockSymbolMapper: jest.Mocked<SymbolMapper>;
-  let mockSearchWithNews: jest.Mock<
-    (query: string, options: { newsCount: number }) => Promise<NewsResult>
-  >;
 
   beforeEach(() => {
+    mockSearch.mockReset();
+
     mockSymbolMapper = {
       isinToSymbol: jest.fn(),
       clearCache: jest.fn(),
     } as unknown as jest.Mocked<SymbolMapper>;
 
-    mockSearchWithNews = jest.fn();
-
-    const deps: NewsServiceDependencies = {
-      symbolMapper: mockSymbolMapper,
-      searchWithNewsFn: mockSearchWithNews,
-    };
-
-    service = new NewsService(deps);
+    service = new NewsService(mockSymbolMapper);
   });
 
   describe('getNews', () => {
@@ -49,7 +67,7 @@ describe('NewsService', () => {
 
     it('should return news articles for valid ISIN', async () => {
       mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
-      mockSearchWithNews.mockResolvedValue({
+      mockSearch.mockResolvedValue({
         news: [
           {
             title: 'Apple announces new product',
@@ -78,7 +96,7 @@ describe('NewsService', () => {
 
     it('should call symbolMapper with ISIN', async () => {
       mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
-      mockSearchWithNews.mockResolvedValue({ news: [] });
+      mockSearch.mockResolvedValue({ news: [] });
 
       await service.getNews(validRequest);
 
@@ -89,29 +107,29 @@ describe('NewsService', () => {
 
     it('should call Yahoo Finance search with symbol and news count', async () => {
       mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
-      mockSearchWithNews.mockResolvedValue({ news: [] });
+      mockSearch.mockResolvedValue({ news: [] });
 
       await service.getNews({ isin: 'US0378331005', limit: 15 });
 
-      expect(mockSearchWithNews).toHaveBeenCalledWith('AAPL', {
+      expect(mockSearch).toHaveBeenCalledWith('AAPL', {
         newsCount: 15,
       });
     });
 
     it('should use default limit of 10 when not provided', async () => {
       mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
-      mockSearchWithNews.mockResolvedValue({ news: [] });
+      mockSearch.mockResolvedValue({ news: [] });
 
       await service.getNews({ isin: 'US0378331005' });
 
-      expect(mockSearchWithNews).toHaveBeenCalledWith('AAPL', {
+      expect(mockSearch).toHaveBeenCalledWith('AAPL', {
         newsCount: 10,
       });
     });
 
     it('should return empty articles array when no news found', async () => {
       mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
-      mockSearchWithNews.mockResolvedValue({ news: [] });
+      mockSearch.mockResolvedValue({ news: [] });
 
       const result = await service.getNews(validRequest);
 
@@ -121,7 +139,7 @@ describe('NewsService', () => {
 
     it('should handle articles without thumbnails', async () => {
       mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
-      mockSearchWithNews.mockResolvedValue({
+      mockSearch.mockResolvedValue({
         news: [
           {
             title: 'Apple news',
@@ -139,7 +157,7 @@ describe('NewsService', () => {
 
     it('should handle articles with empty thumbnail resolutions', async () => {
       mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
-      mockSearchWithNews.mockResolvedValue({
+      mockSearch.mockResolvedValue({
         news: [
           {
             title: 'Apple news',
@@ -158,7 +176,7 @@ describe('NewsService', () => {
 
     it('should convert providerPublishTime to ISO string', async () => {
       mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
-      mockSearchWithNews.mockResolvedValue({
+      mockSearch.mockResolvedValue({
         news: [
           {
             title: 'Apple news',
@@ -189,7 +207,7 @@ describe('NewsService', () => {
 
     it('should throw NewsServiceError when Yahoo Finance search fails', async () => {
       mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
-      mockSearchWithNews.mockRejectedValue(new Error('Network error'));
+      mockSearch.mockRejectedValue(new Error('Network error'));
 
       await expect(service.getNews(validRequest)).rejects.toThrow(
         NewsServiceError,
@@ -209,7 +227,7 @@ describe('NewsService', () => {
 
     it('should include timestamp in response', async () => {
       mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
-      mockSearchWithNews.mockResolvedValue({ news: [] });
+      mockSearch.mockResolvedValue({ news: [] });
 
       const result = await service.getNews(validRequest);
 
@@ -219,7 +237,7 @@ describe('NewsService', () => {
 
     it('should return totalCount matching articles length', async () => {
       mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
-      mockSearchWithNews.mockResolvedValue({
+      mockSearch.mockResolvedValue({
         news: [
           {
             title: 'News 1',
@@ -244,10 +262,8 @@ describe('NewsService', () => {
   });
 
   describe('constructor', () => {
-    it('should use default yahoo-finance2 when no searchWithNewsFn provided', () => {
-      const serviceWithDefaults = new NewsService({
-        symbolMapper: mockSymbolMapper,
-      });
+    it('should instantiate with symbol mapper', () => {
+      const serviceWithDefaults = new NewsService(mockSymbolMapper);
       expect(serviceWithDefaults).toBeInstanceOf(NewsService);
     });
   });

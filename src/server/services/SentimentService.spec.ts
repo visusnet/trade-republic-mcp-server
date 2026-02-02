@@ -8,40 +8,35 @@ jest.mock('../../logger', () => ({
   logger,
 }));
 
-import {
-  SentimentService,
-  type SentimentServiceDependencies,
-} from './SentimentService';
-import {
-  SentimentServiceError,
-  type SentimentResult,
-} from './SentimentService.types';
+const mockAnalyze = jest.fn();
+jest.mock('sentiment', () => {
+  return jest.fn().mockImplementation(() => ({
+    analyze: mockAnalyze,
+  }));
+});
+
+import { SentimentService } from './SentimentService';
+import { SentimentServiceError } from './SentimentService.types';
 import { GetSentimentRequestSchema } from './SentimentService.request';
 import type { NewsService } from './NewsService';
 
 describe('SentimentService', () => {
   let service: SentimentService;
   let mockNewsService: jest.Mocked<NewsService>;
-  let mockSentimentAnalyze: jest.Mock<(text: string) => SentimentResult>;
 
   beforeEach(() => {
+    mockAnalyze.mockReset();
+
     mockNewsService = {
       getNews: jest.fn(),
     } as unknown as jest.Mocked<NewsService>;
 
-    mockSentimentAnalyze = jest.fn();
-
-    const deps: SentimentServiceDependencies = {
-      newsService: mockNewsService,
-      sentimentAnalyzeFn: mockSentimentAnalyze,
-    };
-
-    service = new SentimentService(deps);
+    service = new SentimentService(mockNewsService);
   });
 
   describe('getSentiment with text', () => {
     it('should analyze provided text', async () => {
-      mockSentimentAnalyze.mockReturnValue({
+      mockAnalyze.mockReturnValue({
         score: 5,
         comparative: 0.5,
         positive: ['great', 'excellent'],
@@ -60,8 +55,8 @@ describe('SentimentService', () => {
       expect(result.analysis[0].negativeWords).toEqual([]);
     });
 
-    it('should call sentiment analyzer with text', async () => {
-      mockSentimentAnalyze.mockReturnValue({
+    it('should call sentiment analyzer with text and finance extras', async () => {
+      mockAnalyze.mockReturnValue({
         score: 0,
         comparative: 0,
         positive: [],
@@ -70,11 +65,11 @@ describe('SentimentService', () => {
 
       await service.getSentiment({ text: 'test text' });
 
-      expect(mockSentimentAnalyze).toHaveBeenCalledWith('test text');
+      expect(mockAnalyze).toHaveBeenCalledWith('test text', expect.any(Object));
     });
 
     it('should not include isin/symbol for text-only analysis', async () => {
-      mockSentimentAnalyze.mockReturnValue({
+      mockAnalyze.mockReturnValue({
         score: 0,
         comparative: 0,
         positive: [],
@@ -120,7 +115,7 @@ describe('SentimentService', () => {
         timestamp: '2024-01-15T10:00:00Z',
       });
 
-      mockSentimentAnalyze.mockReturnValue({
+      mockAnalyze.mockReturnValue({
         score: 3,
         comparative: 0.3,
         positive: ['rises'],
@@ -198,7 +193,7 @@ describe('SentimentService', () => {
 
   describe('sentiment direction calculation', () => {
     it('should return positive for comparative > 0.1', async () => {
-      mockSentimentAnalyze.mockReturnValue({
+      mockAnalyze.mockReturnValue({
         score: 5,
         comparative: 0.15,
         positive: ['good'],
@@ -211,7 +206,7 @@ describe('SentimentService', () => {
     });
 
     it('should return negative for comparative < -0.1', async () => {
-      mockSentimentAnalyze.mockReturnValue({
+      mockAnalyze.mockReturnValue({
         score: -5,
         comparative: -0.15,
         positive: [],
@@ -224,7 +219,7 @@ describe('SentimentService', () => {
     });
 
     it('should return neutral for comparative between -0.1 and 0.1', async () => {
-      mockSentimentAnalyze.mockReturnValue({
+      mockAnalyze.mockReturnValue({
         score: 0,
         comparative: 0.05,
         positive: [],
@@ -237,7 +232,7 @@ describe('SentimentService', () => {
     });
 
     it('should return neutral for comparative exactly at 0.1 threshold', async () => {
-      mockSentimentAnalyze.mockReturnValue({
+      mockAnalyze.mockReturnValue({
         score: 1,
         comparative: 0.1,
         positive: ['ok'],
@@ -250,7 +245,7 @@ describe('SentimentService', () => {
     });
 
     it('should return neutral for comparative exactly at -0.1 threshold', async () => {
-      mockSentimentAnalyze.mockReturnValue({
+      mockAnalyze.mockReturnValue({
         score: -1,
         comparative: -0.1,
         positive: [],
@@ -265,7 +260,7 @@ describe('SentimentService', () => {
 
   describe('overall score calculation', () => {
     it('should normalize score to -100 to 100 range', async () => {
-      mockSentimentAnalyze.mockReturnValue({
+      mockAnalyze.mockReturnValue({
         score: 10,
         comparative: 2.5, // Max 5 -> 100
         positive: ['great'],
@@ -278,7 +273,7 @@ describe('SentimentService', () => {
     });
 
     it('should clamp score to max 100', async () => {
-      mockSentimentAnalyze.mockReturnValue({
+      mockAnalyze.mockReturnValue({
         score: 50,
         comparative: 7.0, // Would be 140, clamped to 100
         positive: ['amazing'],
@@ -291,7 +286,7 @@ describe('SentimentService', () => {
     });
 
     it('should clamp score to min -100', async () => {
-      mockSentimentAnalyze.mockReturnValue({
+      mockAnalyze.mockReturnValue({
         score: -50,
         comparative: -7.0, // Would be -140, clamped to -100
         positive: [],
@@ -325,7 +320,7 @@ describe('SentimentService', () => {
         timestamp: '2024-01-15T10:00:00Z',
       });
 
-      mockSentimentAnalyze
+      mockAnalyze
         .mockReturnValueOnce({
           score: 5,
           comparative: 2.5, // 50
@@ -347,7 +342,7 @@ describe('SentimentService', () => {
 
   describe('overall direction calculation', () => {
     it('should return positive for overall score > 0', async () => {
-      mockSentimentAnalyze.mockReturnValue({
+      mockAnalyze.mockReturnValue({
         score: 5,
         comparative: 1.0,
         positive: ['good'],
@@ -360,7 +355,7 @@ describe('SentimentService', () => {
     });
 
     it('should return negative for overall score < 0', async () => {
-      mockSentimentAnalyze.mockReturnValue({
+      mockAnalyze.mockReturnValue({
         score: -5,
         comparative: -1.0,
         positive: [],
@@ -373,7 +368,7 @@ describe('SentimentService', () => {
     });
 
     it('should return neutral for overall score = 0', async () => {
-      mockSentimentAnalyze.mockReturnValue({
+      mockAnalyze.mockReturnValue({
         score: 0,
         comparative: 0,
         positive: [],
@@ -421,7 +416,7 @@ describe('SentimentService', () => {
         timestamp: '2024-01-15T10:00:00Z',
       });
 
-      mockSentimentAnalyze.mockReturnValue({
+      mockAnalyze.mockReturnValue({
         score: 4,
         comparative: 4.0, // High intensity
         positive: ['great'],
@@ -455,7 +450,7 @@ describe('SentimentService', () => {
         timestamp: '2024-01-15T10:00:00Z',
       });
 
-      mockSentimentAnalyze
+      mockAnalyze
         .mockReturnValueOnce({
           score: 2,
           comparative: 2.0,
@@ -496,7 +491,7 @@ describe('SentimentService', () => {
         timestamp: '2024-01-15T10:00:00Z',
       });
 
-      mockSentimentAnalyze
+      mockAnalyze
         .mockReturnValueOnce({
           score: 2,
           comparative: 0.5,
@@ -516,7 +511,7 @@ describe('SentimentService', () => {
     });
 
     it('should return low confidence for single text analysis', async () => {
-      mockSentimentAnalyze.mockReturnValue({
+      mockAnalyze.mockReturnValue({
         score: 5,
         comparative: 1.0,
         positive: ['good'],
@@ -545,7 +540,7 @@ describe('SentimentService', () => {
 
   describe('summary generation', () => {
     it('should generate summary for positive sentiment', async () => {
-      mockSentimentAnalyze.mockReturnValue({
+      mockAnalyze.mockReturnValue({
         score: 5,
         comparative: 2.5,
         positive: ['great', 'excellent'],
@@ -558,7 +553,7 @@ describe('SentimentService', () => {
     });
 
     it('should generate summary for negative sentiment', async () => {
-      mockSentimentAnalyze.mockReturnValue({
+      mockAnalyze.mockReturnValue({
         score: -5,
         comparative: -2.5,
         positive: [],
@@ -571,7 +566,7 @@ describe('SentimentService', () => {
     });
 
     it('should generate summary for neutral sentiment', async () => {
-      mockSentimentAnalyze.mockReturnValue({
+      mockAnalyze.mockReturnValue({
         score: 0,
         comparative: 0,
         positive: [],
@@ -605,7 +600,7 @@ describe('SentimentService', () => {
         timestamp: '2024-01-15T10:00:00Z',
       });
 
-      mockSentimentAnalyze.mockReturnValue({
+      mockAnalyze.mockReturnValue({
         score: 2,
         comparative: 0.5,
         positive: ['good'],
@@ -621,7 +616,7 @@ describe('SentimentService', () => {
 
   describe('timestamp', () => {
     it('should include timestamp in response', async () => {
-      mockSentimentAnalyze.mockReturnValue({
+      mockAnalyze.mockReturnValue({
         score: 0,
         comparative: 0,
         positive: [],
@@ -636,10 +631,8 @@ describe('SentimentService', () => {
   });
 
   describe('constructor', () => {
-    it('should use default sentiment library when no sentimentAnalyzeFn provided', () => {
-      const serviceWithDefaults = new SentimentService({
-        newsService: mockNewsService,
-      });
+    it('should instantiate Sentiment library internally', () => {
+      const serviceWithDefaults = new SentimentService(mockNewsService);
       expect(serviceWithDefaults).toBeInstanceOf(SentimentService);
     });
   });
