@@ -9,7 +9,11 @@ import yahooFinance from 'yahoo-finance2';
 import { logger } from '../../logger';
 import type { SymbolMapper } from './SymbolMapper';
 import type { GetNewsRequest } from './NewsService.request';
-import type { GetNewsResponse, NewsArticle } from './NewsService.response';
+import {
+  GetNewsResponseSchema,
+  type GetNewsResponse,
+  type NewsArticle,
+} from './NewsService.response';
 import {
   NewsServiceError,
   type YahooFinanceSearchWithNewsFn,
@@ -83,12 +87,12 @@ export class NewsService {
       'Fetched news articles',
     );
 
-    return {
+    return GetNewsResponseSchema.parse({
       isin: request.isin,
       symbol,
       articles,
       totalCount: articles.length,
       timestamp: new Date().toISOString(),
-    };
+    });
   }
 }

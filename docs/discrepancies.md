@@ -2035,7 +2035,9 @@ interval: "5m" / "15m" / "30m" / "1h"
 
 ---
 
-### DISCREPANCY-013: ADR-014 Missing Response Validation
+### DISCREPANCY-013: ADR-014 Missing Response Validation [RESOLVED]
+
+**Status:** RESOLVED (2026-02-02) - Added .parse() validation to all affected services
 
 **ADR Reference:** ADR-014: Follow MCP Patterns
 
@@ -2089,6 +2091,16 @@ return { ... };
 // After:
 return ResponseSchema.parse({ ... });
 ```
+
+**Resolution:**
+Added `.parse()` validation to all affected services:
+- RiskService: `calculatePositionSize()`, `getRiskMetrics()`
+- NewsService: `getNews()`
+- SentimentService: `analyzeText()`, `analyzeNewsForIsin()`
+- FundamentalsService: `getFundamentals()`
+- TechnicalAnalysisService: `getIndicators()`, `getDetailedAnalysis()`
+
+Also added `sanitizeNumber()` helper to TechnicalAnalysisService to convert NaN values to null (technical indicator libraries can return NaN in edge cases).
 
 ---
 

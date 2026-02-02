@@ -11,8 +11,10 @@
 import {
   type CalculatePositionSizeRequest,
   type CalculatePositionSizeResponse,
+  CalculatePositionSizeResponseSchema,
   type GetRiskMetricsRequest,
   type GetRiskMetricsResponse,
+  GetRiskMetricsResponseSchema,
   type VolatilityResult,
   type VaRResult,
   type MaxDrawdownResult,
@@ -71,7 +73,7 @@ export class RiskService {
       winLossRatio,
     );
 
-    return {
+    return CalculatePositionSizeResponseSchema.parse({
       kellyPercentage,
       adjustedPercentage,
       positionSizeAmount,
@@ -80,7 +82,7 @@ export class RiskService {
       winLossRatio,
       warnings,
       timestamp: new Date().toISOString(),
-    };
+    });
   }
 
   /**
@@ -121,7 +123,7 @@ export class RiskService {
     const periodsPerYear = PERIODS_PER_YEAR[timeframe];
     const annualizedReturn = Math.exp(meanLogReturn * periodsPerYear) - 1;
 
-    return {
+    return GetRiskMetricsResponseSchema.parse({
       volatility,
       valueAtRisk: var_,
       maxDrawdown,
@@ -134,7 +136,7 @@ export class RiskService {
       dataPoints: request.prices.length,
       timeframe,
       timestamp: new Date().toISOString(),
-    };
+    });
   }
 
   // Private calculation methods

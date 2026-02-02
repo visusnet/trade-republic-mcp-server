@@ -9,11 +9,12 @@ import Sentiment from 'sentiment';
 import { logger } from '../../logger';
 import type { NewsService } from './NewsService';
 import type { GetSentimentRequest } from './SentimentService.request';
-import type {
-  GetSentimentResponse,
-  SentimentConfidence,
-  SentimentDirection,
-  TextSentiment,
+import {
+  GetSentimentResponseSchema,
+  type GetSentimentResponse,
+  type SentimentConfidence,
+  type SentimentDirection,
+  type TextSentiment,
 } from './SentimentService.response';
 import {
   SentimentServiceError,
@@ -97,7 +98,7 @@ export class SentimentService {
     const textSentiment = this.createTextSentiment(text, sentimentResult);
     const normalizedScore = this.normalizeScore(sentimentResult.comparative);
 
-    return {
+    return GetSentimentResponseSchema.parse({
       overallScore: normalizedScore,
       overallDirection: this.getOverallDirection(normalizedScore),
       confidence: 'low',
@@ -108,7 +109,7 @@ export class SentimentService {
         false,
       ),
       timestamp: new Date().toISOString(),
-    };
+    });
   }
 
   private async analyzeNewsForIsin(
@@ -151,7 +152,7 @@ export class SentimentService {
       'Completed sentiment analysis',
     );
 
-    return {
+    return GetSentimentResponseSchema.parse({
       isin,
       symbol: newsData.symbol,
       overallScore: normalizedScore,
@@ -160,7 +161,7 @@ export class SentimentService {
       analysis,
       summary: this.generateSummary(overallDirection, analysis.length, true),
       timestamp: new Date().toISOString(),
-    };
+    });
   }
 
   private createTextSentiment(

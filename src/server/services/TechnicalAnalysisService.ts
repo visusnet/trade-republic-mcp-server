@@ -12,13 +12,15 @@ import type {
   GetIndicatorsRequest,
   GetDetailedAnalysisRequest,
 } from './TechnicalAnalysisService.request';
-import type {
-  GetIndicatorsResponse,
-  GetDetailedAnalysisResponse,
-  IndicatorResult,
-  IndicatorSignal,
-  SignalDirection,
-  SignalStrength,
+import {
+  GetIndicatorsResponseSchema,
+  GetDetailedAnalysisResponseSchema,
+  type GetIndicatorsResponse,
+  type GetDetailedAnalysisResponse,
+  type IndicatorResult,
+  type IndicatorSignal,
+  type SignalDirection,
+  type SignalStrength,
 } from './TechnicalAnalysisService.response';
 import {
   TechnicalAnalysisError,
@@ -34,6 +36,17 @@ const SIGNAL_WEIGHTS: Record<SignalStrength, number> = {
   moderate: 1,
   weak: 0.5,
 };
+
+/**
+ * Convert NaN to null for schema validation.
+ * Technical indicator libraries can return NaN in edge cases (e.g., zero variance).
+ */
+function sanitizeNumber(value: number | null): number | null {
+  if (value === null || !Number.isFinite(value)) {
+    return null;
+  }
+  return value;
+}
 
 export class TechnicalAnalysisService {
   private readonly indicatorsService: TechnicalIndicatorsService;
@@ -77,14 +90,14 @@ export class TechnicalAnalysisService {
       indicators.push(result);
     }
 
-    return {
+    return GetIndicatorsResponseSchema.parse({
       isin: request.isin,
       exchange: historyResponse.exchange,
       range: historyResponse.range,
       candleCount: candles.length,
       indicators,
       timestamp: new Date().toISOString(),
-    };
+    });
   }
 
   /**
@@ -117,19 +130,43 @@ export class TechnicalAnalysisService {
     const currentPrice = candles[candles.length - 1].close;
 
     // Calculate all core indicators
-    const rsi = this.indicatorsService.calculateRSI(candles);
-    const macd = this.indicatorsService.calculateMACD(candles);
-    const bollinger = this.indicatorsService.calculateBollingerBands(candles);
-    const stochastic = this.indicatorsService.calculateStochastic(candles);
-    const adx = this.indicatorsService.calculateADX(candles);
-    const atr = this.indicatorsService.calculateATR(candles);
-    const sma20 = this.indicatorsService.calculateSMA(candles, 20);
-    const sma50 = this.indicatorsService.calculateSMA(candles, 50);
+    const rsiResult = this.indicatorsService.calculateRSI(candles);
+    const macdResult = this.indicatorsService.calculateMACD(candles);
+    const bollingerResult =
+      this.indicatorsService.calculateBollingerBands(candles);
+    const stochasticResult =
+      this.indicatorsService.calculateStochastic(candles);
+    const adxResult = this.indicatorsService.calculateADX(candles);
+    const atrResult = this.indicatorsService.calculateATR(candles);
+    const sma20Result = this.indicatorsService.calculateSMA(candles, 20);
+    const sma50Result = this.indicatorsService.calculateSMA(candles, 50);
+
+    // Sanitize values (convert NaN to null)
+    const rsi = sanitizeNumber(rsiResult.value);
+    const macd = {
+      macd: sanitizeNumber(macdResult.macd),
+      signal: sanitizeNumber(macdResult.signal),
+      histogram: sanitizeNumber(macdResult.histogram),
+    };
+    const bollinger = {
+      upper: sanitizeNumber(bollingerResult.upper),
+      middle: sanitizeNumber(bollingerResult.middle),
+      lower: sanitizeNumber(bollingerResult.lower),
+      pb: sanitizeNumber(bollingerResult.pb),
+    };
+    const stochastic = {
+      k: sanitizeNumber(stochasticResult.k),
+      d: sanitizeNumber(stochasticResult.d),
+    };
+    const adx = sanitizeNumber(adxResult.adx);
+    const atr = sanitizeNumber(atrResult.value);
+    const sma20 = sanitizeNumber(sma20Result.value);
+    const sma50 = sanitizeNumber(sma50Result.value);
 
     // Generate signals
     const signals = this.generateSignals(
       candles,
-      rsi.value,
+      rsi,
       macd,
       bollinger,
       stochastic,
@@ -139,14 +176,9 @@ export class TechnicalAnalysisService {
     const summary = this.aggregateSignals(signals);
 
     // Determine trend
-    const trend = this.determineTrend(
-      currentPrice,
-      sma20.value,
-      sma50.value,
-      adx.adx,
-    );
+    const trend = this.determineTrend(currentPrice, sma20, sma50, adx);
 
-    return {
+    return GetDetailedAnalysisResponseSchema.parse({
       isin: request.isin,
       exchange: historyResponse.exchange,
       range: historyResponse.range,
@@ -155,27 +187,15 @@ export class TechnicalAnalysisService {
       trend,
       signals,
       indicators: {
-        rsi: rsi.value,
-        macd: {
-          macd: macd.macd,
-          signal: macd.signal,
-          histogram: macd.histogram,
-        },
-        bollingerBands: {
-          upper: bollinger.upper,
-          middle: bollinger.middle,
-          lower: bollinger.lower,
-          pb: bollinger.pb,
-        },
-        stochastic: {
-          k: stochastic.k,
-          d: stochastic.d,
-        },
-        adx: adx.adx,
-        atr: atr.value,
+        rsi,
+        macd,
+        bollingerBands: bollinger,
+        stochastic,
+        adx,
+        atr,
       },
       timestamp: new Date().toISOString(),
-    };
+    });
   }
 
   /**
@@ -434,7 +454,7 @@ export class TechnicalAnalysisService {
     }
     const previousCandles = candles.slice(0, -1);
     const prevMacd = this.indicatorsService.calculateMACD(previousCandles);
-    return prevMacd.histogram;
+    return sanitizeNumber(prevMacd.histogram);
   }
 
   /**

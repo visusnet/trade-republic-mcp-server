@@ -12,13 +12,14 @@ import type {
   GetFundamentalsRequest,
   FundamentalsModule,
 } from './FundamentalsService.request';
-import type {
-  GetFundamentalsResponse,
-  ProfileData,
-  FinancialsData,
-  EarningsData,
-  ValuationData,
-  Recommendation,
+import {
+  GetFundamentalsResponseSchema,
+  type GetFundamentalsResponse,
+  type ProfileData,
+  type FinancialsData,
+  type EarningsData,
+  type ValuationData,
+  type Recommendation,
 } from './FundamentalsService.response';
 import {
   FundamentalsServiceError,
@@ -133,7 +134,7 @@ export class FundamentalsService {
       'Fetched fundamentals',
     );
 
-    return response;
+    return GetFundamentalsResponseSchema.parse(response);
   }
 
   private getYahooModules(
