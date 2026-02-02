@@ -2518,7 +2518,7 @@ TradeRepublicApi may be using a different or older API variant. We follow pytr a
 
 **Source:** Task 13 (TradeRepublicApi, trade-republic-api)
 
-**Severity:** CRITICAL
+**Severity:** ~~CRITICAL~~ NON-ISSUE
 
 **ADR/Topic:** Trade Republic API - Market Data
 
@@ -2527,33 +2527,31 @@ TradeRepublicApi may be using a different or older API variant. We follow pytr a
 - [trade-republic-api NPM Comparison](./api-comparison-trade-republic-api-npm.md)
 
 **Description:**
-Community projects use combined `id` field with exchange suffix. We use separate `isin` field without exchange.
+Community projects use combined `id` field with exchange suffix.
 
-**TradeRepublicApi:**
+**pytr / TradeRepublicApi / trade-republic-api:**
 ```python
 {"type": "ticker", "id": "US62914V1061.LSX"}
 ```
 
-**trade-republic-api NPM:**
-```javascript
-{"type": "ticker", "token": "{sessionToken}", "id": "ISIN.LSX"}
-```
-
-**Our Implementation:**
+**Our Implementation (MarketDataService.ts):**
 ```typescript
-{"type": "ticker", "isin": "US62914V1061"}
+const tickerId = `${request.isin}.${exchange}`;
+// Results in: {"type": "ticker", "id": "DE0007164600.LSX"}
 ```
 
-**Differences:**
-1. Field name: `id` vs `isin`
-2. Exchange suffix: `ISIN.LSX` vs `ISIN` only
+**RESOLVED (2026-02-02): NON-ISSUE**
 
-**Impact:**
-API may reject requests or return wrong data for wrong exchange.
+Upon code review, our implementation already uses the correct format:
+- Uses `id` field (not `isin`)
+- Combines ISIN with exchange suffix: `DE0007164600.LSX`, `DE0007164600.XETRA`
 
-**Fix Required:**
-1. Change field name from `isin` to `id`
-2. Append exchange suffix (e.g., `.LSX` for Lang & Schwarz)
+The discrepancy document incorrectly described our implementation. Verified in:
+- `MarketDataService.ts` line 59: `const tickerId = \`${request.isin}.${exchange}\``
+- `MarketDataService.ts` line 65: `{ id: tickerId }`
+- Tests confirm format: `payload: { id: 'DE0007164600.LSX' }`
+
+Our implementation matches pytr and all community projects exactly.
 
 ---
 
@@ -2804,10 +2802,9 @@ After all agents complete, fix discrepancies in this order:
    - ~~Change `aggregateHistory` to `aggregateHistoryLight` in MarketDataService.ts~~
    - pytr (most authoritative, 677 stars) uses `aggregateHistory` - we match pytr
 
-3. **DISCREPANCY-023 (TR API - TradeRepublicApi + trade-republic-api):** Fix payload format for market data
-   - Change field name from `isin` to `id` in ticker/history subscriptions
-   - Append exchange suffix to ISIN (e.g., `DE0007164600` → `DE0007164600.LSX`)
-   - Format: `{"type": "ticker", "id": "ISIN.EXCHANGE"}`
+3. ~~**DISCREPANCY-023 (TR API - TradeRepublicApi + trade-republic-api):** Fix payload format for market data~~ **NON-ISSUE (2026-02-02)**
+   - ~~Change field name from `isin` to `id` in ticker/history subscriptions~~
+   - Our implementation already uses `id: "ISIN.EXCHANGE"` format - matches pytr exactly
 
 4. **DISCREPANCY-019 (TR API - pytr + TR_Connector):** Investigate session duration
    - Both pytr and Trade_Republic_Connector use 290 second (~5 min) sessions
