@@ -1790,7 +1790,9 @@ Implement exponential backoff retry logic for HTTP requests.
 
 ---
 
-### DISCREPANCY-005: ADR-001 Missing Circuit Breaker
+### DISCREPANCY-005: ADR-001 Missing Circuit Breaker [NON-ISSUE]
+
+**Status:** NON-ISSUE (2026-02-02) - YAGNI. The LLM caller (Claude) is a smarter "circuit breaker" than any code pattern. When the API fails, Claude receives the error and can intelligently decide to stop/wait/retry based on context.
 
 **ADR Reference:** ADR-001: Trade Republic API Integration (line 96)
 
@@ -1803,11 +1805,13 @@ ADR-001 requires "Circuit breaker for repeated failures" but no circuit breaker 
 No circuit breaker state tracking or failure counting found. Searched for "circuit", "breaker", "failure count", "consecutive" - none found.
 
 **Impact:**
-- Repeated failures continue indefinitely without protection
-- Could overwhelm a failing service
+- ~~Repeated failures continue indefinitely without protection~~
+- ~~Could overwhelm a failing service~~
+- Not applicable: Claude handles failures with context awareness
 
 **Fix Required:**
-Implement circuit breaker pattern to stop requests after repeated failures.
+~~Implement circuit breaker pattern to stop requests after repeated failures.~~
+None - YAGNI.
 
 ---
 
@@ -2875,7 +2879,7 @@ After all agents complete, fix discrepancies in this order:
    - Set 'Origin: https://app.traderepublic.com' in WebSocket headers
    - May improve connection stability
 
-9. **DISCREPANCY-005:** Implement circuit breaker pattern
+9. ~~**DISCREPANCY-005:** Implement circuit breaker pattern~~ **NON-ISSUE (2026-02-02)** - YAGNI, LLM handles failures intelligently
 10. **DISCREPANCY-007:** Implement heartbeat/keep-alive mechanism
 11. **DISCREPANCY-008:** Fix concurrent session refresh race condition
 12. **DISCREPANCY-010:** Implement event triggers for ADR-009
