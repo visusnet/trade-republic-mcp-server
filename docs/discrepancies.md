@@ -2694,6 +2694,67 @@ Implementation details:
 
 ---
 
+### DISCREPANCY-025: Type Definitions Not Derived from Zod Schemas
+
+**ADR Reference:** ADR-014: Follow MCP Patterns, coinbase-mcp-server patterns
+
+**Severity:** Medium
+
+**Description:**
+The codebase has many TypeScript interfaces that are manually defined instead of being derived from Zod schemas. This violates the pattern used in coinbase-mcp-server where ALL types are derived from Zod schemas using `z.output<typeof Schema>`.
+
+**Issues Found:**
+
+1. **Manual interfaces instead of Zod-derived types:**
+   - `Candle`, `RSIResult`, `MACDResult`, `BollingerBandsResult`, `MovingAverageResult`, `ADXResult`, `StochasticResult`, `ATRResult`, `OBVResult`, `VWAPResult` (TechnicalAnalysisService.types.ts)
+   - `VolatilityResult`, `VaRResult`, `MaxDrawdownResult` (RiskService.types.ts)
+   - `SentimentResult` (SentimentService.types.ts)
+   - `KeyPair`, `Credentials`, `SessionTokens`, `StoredCookie`, `WebSocketMessage`, `SignedPayload` (TradeRepublicApiService.types.ts)
+
+2. **Unnecessary `*Dependencies` interfaces:**
+   - `SentimentServiceDependencies`, `NewsServiceDependencies`, `FundamentalsServiceDependencies`
+   - Should inject dependencies directly instead of using indirection
+
+3. **Production code that only exists for tests:**
+   - `createTradeRepublicApiService` factory function
+   - `FileSystem` interface (use jest.mock instead)
+   - `YahooFinance*Fn` interfaces (use jest.mock instead)
+
+4. **Missing Zod rules file:**
+   - coinbase-mcp-server has `.claude/rules/zod.md` with comprehensive schema rules
+   - Trade Republic should copy and adapt this file
+
+**Correct Pattern (from coinbase-mcp-server):**
+```typescript
+// Define schema
+export const CandleSchema = z.object({
+  time: z.number().describe('Candle timestamp'),
+  open: z.number().describe('Opening price'),
+  high: z.number().describe('Highest price'),
+  low: z.number().describe('Lowest price'),
+  close: z.number().describe('Closing price'),
+  volume: z.number().optional().describe('Trading volume'),
+});
+
+// Derive type from schema
+export type Candle = z.output<typeof CandleSchema>;
+```
+
+**Impact:**
+- No runtime validation for internal data structures
+- Schema drift between interfaces and actual data
+- Inconsistent patterns between TR and Coinbase MCP servers
+- Test code leaking into production
+
+**Fix Required:**
+1. Copy `.claude/rules/zod.md` from coinbase-mcp-server and adapt for TR
+2. Convert all manual interfaces to Zod schemas with derived types
+3. Remove `*Dependencies` interfaces, inject dependencies directly
+4. Remove `createTradeRepublicApiService` factory, use jest.mock for testing
+5. Remove `FileSystem` and `YahooFinance*Fn` interfaces, use jest.mock
+
+---
+
 ## Verification Status
 
 **ALL 14 AGENTS COMPLETED**
