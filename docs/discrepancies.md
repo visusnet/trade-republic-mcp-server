@@ -2073,7 +2073,9 @@ return ResponseSchema.parse({ ... });
 
 ---
 
-### DISCREPANCY-014: ADR-014 Service-to-Service Dependencies
+### DISCREPANCY-014: ADR-014 Service-to-Service Dependencies [NON-ISSUE]
+
+**Status:** NON-ISSUE (2026-02-02) - Documented as acceptable exceptions
 
 **ADR Reference:** ADR-014: Follow MCP Patterns
 
@@ -2108,6 +2110,9 @@ ADR-014 states "Services have no direct dependencies on each other" but two viol
 1. **Option A:** Refactor to pass data as parameters (caller fetches data, passes to service)
 2. **Option B:** Document these as acceptable exceptions (convenience > purity)
 3. **Option C:** Create orchestrator layer for cross-service operations
+
+**Resolution (Option B):**
+These dependencies are acceptable exceptions. TechnicalAnalysisService and SentimentService are higher-level services that orchestrate data fetching and analysis. The convenience of encapsulating the data-fetch-then-analyze pattern outweighs architectural purity. Pure calculation services (RiskService, TechnicalIndicatorsService) remain dependency-free as specified in `.claude/rules/architecture.md`.
 
 **Verification Evidence:**
 - Agent: MCP Architecture Agent 2 (Zod Validation)
