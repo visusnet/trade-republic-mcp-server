@@ -2694,11 +2694,19 @@ Implementation details:
 
 ---
 
-### DISCREPANCY-025: Type Definitions Not Derived from Zod Schemas
+### ~~DISCREPANCY-025: Type Definitions Not Derived from Zod Schemas~~ RESOLVED (2026-02-02)
 
 **ADR Reference:** ADR-014: Follow MCP Patterns, coinbase-mcp-server patterns
 
 **Severity:** Medium
+
+**Resolution:** Implemented Zod schema patterns matching coinbase-mcp-server:
+- Converted interfaces to Zod schemas with type derivation (TechnicalAnalysis, Risk services)
+- Removed dependency injection patterns (Sentiment, News, Fundamentals services)
+- Removed all `.passthrough()` calls from response schemas
+- Added `.describe()` to all schema fields
+- Created `.claude/rules/zod.md` rules file
+- See commit: `refactor: implement Zod schema patterns (DISCREPANCY-025)`
 
 **Description:**
 The codebase has many TypeScript interfaces that are manually defined instead of being derived from Zod schemas. This violates the pattern used in coinbase-mcp-server where ALL types are derived from Zod schemas using `z.output<typeof Schema>`.
