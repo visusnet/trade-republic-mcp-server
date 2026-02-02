@@ -2425,11 +2425,13 @@ Session duration changed from 55 minutes to 290 seconds (290,000 ms) to match py
 
 ---
 
-### DISCREPANCY-020: Missing HTTP Headers (Trade Republic API)
+### DISCREPANCY-020: Missing HTTP Headers (Trade Republic API) [NON-ISSUE]
+
+**Status:** NON-ISSUE (2026-02-02) - pytr (677 stars, most authoritative) does NOT set custom HTTP headers and works fine. Following pytr pattern. Can add headers later if bot detection issues occur during live testing.
 
 **Source:** Task 13 (Trade_Republic_Connector)
 
-**Severity:** High
+**Severity:** ~~High~~ None
 
 **ADR/Topic:** Trade Republic API - HTTP Requests
 
@@ -2454,25 +2456,22 @@ Trade_Republic_Connector sets Origin, Referer, User-Agent headers. We only set C
 ```
 
 **Impact:**
-May trigger CORS issues or bot detection.
+~~May trigger CORS issues or bot detection.~~
+None - pytr works without these headers.
 
 **Fix Required:**
-```typescript
-headers: {
-  'Content-Type': 'application/json',
-  'Origin': 'https://app.traderepublic.com',
-  'Referer': 'https://app.traderepublic.com/',
-  'User-Agent': 'Mozilla/5.0 (compatible; TradeRepublicBot/1.0)',
-}
-```
+~~Add custom headers.~~
+None - following pytr pattern.
 
 ---
 
-### DISCREPANCY-021: Missing WebSocket Headers (Trade Republic API)
+### DISCREPANCY-021: Missing WebSocket Headers (Trade Republic API) [NON-ISSUE]
+
+**Status:** NON-ISSUE (2026-02-02) - pytr (677 stars, most authoritative) does NOT set custom WebSocket headers and works fine. Following pytr pattern. Can add headers later if connection issues occur during live testing.
 
 **Source:** Task 13 (Trade_Republic_Connector)
 
-**Severity:** Medium
+**Severity:** ~~Medium~~ None
 
 **ADR/Topic:** Trade Republic API - WebSocket
 
@@ -2494,16 +2493,12 @@ Trade_Republic_Connector sets WebSocket headers. We don't set any custom headers
 No custom WebSocket headers.
 
 **Impact:**
-May affect connection stability or cause bot detection.
+~~May affect connection stability or cause bot detection.~~
+None - pytr works without these headers.
 
 **Fix Required:**
-```typescript
-const ws = new WebSocket(url, {
-  headers: {
-    'Origin': 'https://app.traderepublic.com'
-  }
-});
-```
+~~Add custom WebSocket headers.~~
+None - following pytr pattern.
 
 ---
 
@@ -2852,11 +2847,9 @@ After all agents complete, fix discrepancies in this order:
    - If cookies: add `set-cookie-parser` dependency and cookie extraction
 
 ### Priority 1: Critical (Required by ADRs)
-6. **DISCREPANCY-020 (TR API - TR_Connector):** Add missing HTTP headers
-   - Add 'Origin: https://app.traderepublic.com'
-   - Add 'Referer: https://app.traderepublic.com/'
-   - Add proper User-Agent string
-   - May prevent CORS issues or bot detection
+6. ~~**DISCREPANCY-020 (TR API - TR_Connector):** Add missing HTTP headers~~ **NON-ISSUE (2026-02-02)**
+   - pytr (most authoritative) works without custom headers
+   - Following pytr pattern
 
 7. ~~**DISCREPANCY-003:** Implement rate limiting (1 req/sec)~~ **RESOLVED (2026-02-02)**
    - Added `p-throttle` dependency for rate limiting
@@ -2875,9 +2868,9 @@ After all agents complete, fix discrepancies in this order:
     - OrderService.ts now has 100% coverage in all metrics (statements, branches, functions, lines)
 
 ### Priority 2: Medium (Required by ADRs)
-8. **DISCREPANCY-021 (TR API - TR_Connector):** Add WebSocket Origin header
-   - Set 'Origin: https://app.traderepublic.com' in WebSocket headers
-   - May improve connection stability
+8. ~~**DISCREPANCY-021 (TR API - TR_Connector):** Add WebSocket Origin header~~ **NON-ISSUE (2026-02-02)**
+   - pytr (most authoritative) works without custom WebSocket headers
+   - Following pytr pattern
 
 9. ~~**DISCREPANCY-005:** Implement circuit breaker pattern~~ **NON-ISSUE (2026-02-02)** - YAGNI, LLM handles failures intelligently
 10. **DISCREPANCY-007:** Implement heartbeat/keep-alive mechanism
