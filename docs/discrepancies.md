@@ -1817,7 +1817,7 @@ None - YAGNI.
 
 ---
 
-### DISCREPANCY-006: ADR-001 Missing WebSocket Reconnection
+### ~~DISCREPANCY-006: ADR-001 Missing WebSocket Reconnection~~ RESOLVED (2026-02-02)
 
 **ADR Reference:** ADR-001: Trade Republic API Integration (line 89)
 
@@ -1826,23 +1826,15 @@ None - YAGNI.
 **Description:**
 ADR-001 requires "Handle connection drops with exponential backoff" but WebSocketManager only sets status to DISCONNECTED without reconnection.
 
-**Actual Implementation:**
-File: `src/server/services/TradeRepublicApiService.websocket.ts` lines 87-98
-
-```typescript
-this.ws.on('close', (code: number, reason: Buffer) => {
-  logger.api.info(`WebSocket closed: ${code} ${reasonStr}`);
-  this.status = ConnectionStatus.DISCONNECTED;
-  // NO RECONNECTION LOGIC
-});
-```
-
-**Impact:**
-- Connection drops require manual re-authentication
-- Active subscriptions fail silently
-
-**Fix Required:**
-Implement automatic reconnection with exponential backoff when WebSocket connection drops.
+**Resolution:**
+- Implemented automatic reconnection when connection drops or heartbeat times out
+- Exponential backoff: max 5 attempts with delays 1s -> 2s -> 4s -> 8s -> 16s
+- Track active subscriptions in a map for recovery after reconnect
+- Auto-resubscribe to all active topics after successful reconnect
+- Skip reconnection on intentional disconnect()
+- Emit 'reconnected' event on successful reconnection
+- Clear previousResponses on reconnect (delta state would be invalid)
+- See commit: `fix: implement WebSocket reconnection with exponential backoff (DISCREPANCY-006)`
 
 ---
 
@@ -2863,7 +2855,9 @@ After all agents complete, fix discrepancies in this order:
    - Retry on network errors (ECONNRESET, etc.)
    - Parameters: 3 retries, 1s base delay, 2x multiplier, 10s max
    - Compose: throttle(retry(fetch)) - each retry respects rate limiting
-9. **DISCREPANCY-006:** Implement WebSocket reconnection with backoff
+9. ~~**DISCREPANCY-006:** Implement WebSocket reconnection with backoff~~ **RESOLVED (2026-02-02)**
+    - Exponential backoff: max 5 attempts, 1s -> 2s -> 4s -> 8s -> 16s delays
+    - Auto-resubscribe to all active topics after successful reconnect
 10. ~~**DISCREPANCY-002:** Add missing test coverage for OrderService.ts~~ **RESOLVED (2026-02-02)**
     - OrderService.ts now has 100% coverage in all metrics (statements, branches, functions, lines)
 
