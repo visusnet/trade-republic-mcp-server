@@ -1640,7 +1640,9 @@ hedge: 0,
 
 ---
 
-### DISCREPANCY-002: ADR-016 Incomplete Test Coverage in OrderService.ts
+### DISCREPANCY-002: ADR-016 Incomplete Test Coverage in OrderService.ts [RESOLVED]
+
+**Status:** RESOLVED (2026-02-02) - OrderService.ts now has 100% coverage in all metrics.
 
 **ADR Reference:** ADR-016: TDD with Red-Green-Refactor Cycle
 
@@ -2865,7 +2867,8 @@ After all agents complete, fix discrepancies in this order:
    - Parameters: 3 retries, 1s base delay, 2x multiplier, 10s max
    - Compose: throttle(retry(fetch)) - each retry respects rate limiting
 9. **DISCREPANCY-006:** Implement WebSocket reconnection with backoff
-10. **DISCREPANCY-002:** Add missing test coverage for OrderService.ts
+10. ~~**DISCREPANCY-002:** Add missing test coverage for OrderService.ts~~ **RESOLVED (2026-02-02)**
+    - OrderService.ts now has 100% coverage in all metrics (statements, branches, functions, lines)
 
 ### Priority 2: Medium (Required by ADRs)
 8. **DISCREPANCY-021 (TR API - TR_Connector):** Add WebSocket Origin header
