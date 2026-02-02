@@ -2476,34 +2476,41 @@ const ws = new WebSocket(url, {
 
 **Source:** Task 13 (TradeRepublicApi, trade-republic-api)
 
-**Severity:** CRITICAL
+**Severity:** ~~CRITICAL~~ NON-ISSUE
 
 **ADR/Topic:** Trade Republic API - Market Data
 
 **Reports:** [TradeRepublicApi Comparison](./api-comparison-traderepublicapi.md)
 
 **Description:**
-Community projects use `aggregateHistoryLight` for historical price data, but we use `aggregateHistory`.
+TradeRepublicApi uses `aggregateHistoryLight` for historical price data, but we use `aggregateHistory`.
 
-**TradeRepublicApi:**
+**TradeRepublicApi (354 stars):**
 ```python
 {"type": "aggregateHistoryLight", "id": "DE0007164600.LSX", "resolution": 604800000}
 ```
 
-**Our Implementation:**
-```typescript
-{"type": "aggregateHistory", "isin": "DE0007164600", "resolution": "60"}
+**pytr (677 stars, most authoritative):**
+```python
+{"type": "aggregateHistory", "id": "DE0007164600.LSX", "range": "1d"}
 ```
 
-**Additional Differences:**
-- Resolution format: number (milliseconds) vs string
+**Our Implementation:**
+```typescript
+{"type": "aggregateHistory", "id": "DE0007164600.LSX", "range": "1d"}
+```
 
-**Impact:**
-Historical price data requests may fail completely.
+**RESOLVED (2026-02-02): NON-ISSUE**
 
-**Fix Required:**
-1. Change topic from `aggregateHistory` to `aggregateHistoryLight`
-2. Change resolution from string to milliseconds (e.g., `"60"` -> `604800000`)
+Upon further investigation of pytr's actual source code (line 449 of api.py), pytr uses `aggregateHistory`, NOT `aggregateHistoryLight`. Since pytr is the most authoritative community project (677 stars, actively maintained), and our implementation matches pytr exactly, this is not a discrepancy.
+
+| Library | Stars | Topic Name |
+|---------|-------|------------|
+| pytr | 677 | `aggregateHistory` ✅ |
+| TradeRepublicApi | 354 | `aggregateHistoryLight` |
+| Our implementation | - | `aggregateHistory` ✅ |
+
+TradeRepublicApi may be using a different or older API variant. We follow pytr as the authoritative reference.
 
 ---
 
@@ -2793,9 +2800,9 @@ After all agents complete, fix discrepancies in this order:
    - ~~Clean up previous responses on subscription close (code `C`)~~
    - ~~Reference: pytr/api.py lines 355-386, TradeRepublicApi/api.py lines 822-865~~
 
-2. **DISCREPANCY-022 (TR API - TradeRepublicApi):** Fix topic name for historical data
-   - Change `aggregateHistory` to `aggregateHistoryLight` in MarketDataService.ts
-   - Update resolution format from string to milliseconds (e.g., "60" → 604800000)
+2. ~~**DISCREPANCY-022 (TR API - TradeRepublicApi):** Fix topic name for historical data~~ **NON-ISSUE (2026-02-02)**
+   - ~~Change `aggregateHistory` to `aggregateHistoryLight` in MarketDataService.ts~~
+   - pytr (most authoritative, 677 stars) uses `aggregateHistory` - we match pytr
 
 3. **DISCREPANCY-023 (TR API - TradeRepublicApi + trade-republic-api):** Fix payload format for market data
    - Change field name from `isin` to `id` in ticker/history subscriptions
