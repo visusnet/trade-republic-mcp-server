@@ -160,7 +160,10 @@ describe('TradeRepublicApiService', () => {
     mockCrypto = createMockCryptoManager();
     mockWs = createMockWebSocketManager();
     mockFetch = createMockFetch();
-    service = new TradeRepublicApiService(mockCrypto, mockWs, mockFetch);
+    // Use throttleInterval: 0 for fast tests (no rate limiting delay)
+    service = new TradeRepublicApiService(mockCrypto, mockWs, mockFetch, {
+      throttleInterval: 0,
+    });
   });
 
   describe('initialize', () => {
@@ -873,6 +876,8 @@ describe('TradeRepublicApiService', () => {
   describe('rate limiting', () => {
     beforeEach(() => {
       jest.useFakeTimers();
+      // Create service with default throttle interval (1000ms) for rate limiting tests
+      service = new TradeRepublicApiService(mockCrypto, mockWs, mockFetch);
     });
 
     afterEach(() => {
@@ -1024,6 +1029,8 @@ describe('TradeRepublicApiService', () => {
   describe('exponential backoff', () => {
     beforeEach(() => {
       jest.useFakeTimers();
+      // Create service with default throttle interval for backoff tests
+      service = new TradeRepublicApiService(mockCrypto, mockWs, mockFetch);
     });
 
     afterEach(() => {

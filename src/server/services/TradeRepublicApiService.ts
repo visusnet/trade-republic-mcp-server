@@ -62,6 +62,12 @@ const RETRY_CONFIG = {
  * 5. Use subscribe() for real-time data
  * 6. Call disconnect() when done
  */
+/** Options for TradeRepublicApiService */
+export interface TradeRepublicApiServiceOptions {
+  /** Throttle interval in ms between HTTP requests (default: 1000ms per ADR-001) */
+  throttleInterval?: number;
+}
+
 export class TradeRepublicApiService {
   private keyPair: KeyPair | null = null;
   private authStatus: AuthStatus = AuthStatus.UNAUTHENTICATED;
@@ -79,9 +85,11 @@ export class TradeRepublicApiService {
     private readonly crypto: CryptoManager,
     private readonly ws: WebSocketManager,
     private readonly fetchFn: FetchFunction,
+    options: TradeRepublicApiServiceOptions = {},
   ) {
-    // Rate limit: 1 request per 1000ms (per ADR-001)
-    const throttle = pThrottle({ limit: 1, interval: 1000 });
+    // Rate limit: 1 request per interval (default 1000ms per ADR-001)
+    const interval = options.throttleInterval ?? 1000;
+    const throttle = pThrottle({ limit: 1, interval });
 
     // Compose: throttle(retry(fetch))
     // Each retry attempt respects rate limiting
