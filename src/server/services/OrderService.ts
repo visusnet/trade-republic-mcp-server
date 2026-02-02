@@ -9,9 +9,7 @@ import { logger } from '../../logger';
 import type { TradeRepublicApiService } from './TradeRepublicApiService';
 import {
   AuthStatus,
-  MESSAGE_CODE,
   TradeRepublicError,
-  type WebSocketMessage,
 } from './TradeRepublicApiService.types';
 import type {
   PlaceOrderRequest,
@@ -46,10 +44,11 @@ export class OrderService {
 
     const payload = this.buildOrderPayload(request);
 
-    return this.subscribeAndWait<PlaceOrderResponse>(
+    return this.api.subscribeAndWait(
       'simpleCreateOrder',
-      PlaceOrderResponseSchema,
       payload,
+      PlaceOrderResponseSchema,
+      this.timeoutMs,
     );
   }
 
@@ -58,9 +57,11 @@ export class OrderService {
   ): Promise<GetOrdersResponse> {
     this.ensureAuthenticated();
     logger.api.info('Requesting orders');
-    return this.subscribeAndWait<GetOrdersResponse>(
+    return this.api.subscribeAndWait(
       'orders',
+      {},
       GetOrdersResponseSchema,
+      this.timeoutMs,
     );
   }
 
@@ -79,124 +80,12 @@ export class OrderService {
   ): Promise<CancelOrderResponse> {
     this.ensureAuthenticated();
     logger.api.info({ orderId: request.orderId }, 'Cancelling order');
-    return this.subscribeAndWait<CancelOrderResponse>(
+    return this.api.subscribeAndWait(
       'cancelOrder',
-      CancelOrderResponseSchema,
       { orderId: request.orderId },
+      CancelOrderResponseSchema,
+      this.timeoutMs,
     );
-  }
-
-  private subscribeAndWait<T>(
-    topic: string,
-    schema: {
-      safeParse: (
-        data: unknown,
-      ) => { success: true; data: T } | { success: false; error: unknown };
-    },
-    payload?: Record<string, unknown>,
-  ): Promise<T> {
-    return new Promise((resolve, reject) => {
-      let subscriptionId: number | null = null;
-      let timeoutId: NodeJS.Timeout | null = null;
-      let resolved = false;
-
-      const cleanup = (): void => {
-        if (timeoutId) {
-          clearTimeout(timeoutId);
-          timeoutId = null;
-        }
-        this.api.offMessage(messageHandler);
-        this.api.offError(errorHandler);
-        if (subscriptionId !== null) {
-          try {
-            this.api.unsubscribe(subscriptionId);
-          } catch {
-            // Ignore unsubscribe errors during cleanup
-          }
-        }
-      };
-
-      const messageHandler = (message: WebSocketMessage): void => {
-        if (resolved || message.id !== subscriptionId) {
-          return;
-        }
-
-        if (message.code === MESSAGE_CODE.E) {
-          resolved = true;
-          cleanup();
-          const errorPayload = message.payload as
-            | { message?: string }
-            | undefined;
-          const errorMessage = errorPayload?.message || 'API error';
-          logger.api.error(
-            { payload: message.payload },
-            `${topic} subscription error`,
-          );
-          reject(new OrderServiceError(errorMessage));
-          return;
-        }
-
-        if (message.code === MESSAGE_CODE.A) {
-          const parsed = schema.safeParse(message.payload);
-          if (!parsed.success) {
-            resolved = true;
-            cleanup();
-            logger.api.error(
-              { error: parsed.error },
-              `${topic} response validation failed`,
-            );
-            reject(
-              new OrderServiceError(
-                `Invalid ${topic} response: ${String(parsed.error)}`,
-              ),
-            );
-            return;
-          }
-
-          resolved = true;
-          cleanup();
-          logger.api.info(`${topic} subscription successful`);
-          resolve(parsed.data);
-        }
-      };
-
-      const errorHandler = (error: Error | WebSocketMessage): void => {
-        if (resolved) {
-          return;
-        }
-        resolved = true;
-        cleanup();
-        logger.api.error({ error }, `${topic} subscription error`);
-        reject(
-          error instanceof Error
-            ? error
-            : new OrderServiceError('WebSocket error'),
-        );
-      };
-
-      this.api.onMessage(messageHandler);
-      this.api.onError(errorHandler);
-
-      try {
-        subscriptionId = this.api.subscribe({
-          topic,
-          payload,
-        });
-
-        timeoutId = setTimeout(() => {
-          // Note: This callback only runs if cleanup() hasn't been called,
-          // because cleanup() calls clearTimeout(). So 'resolved' will always
-          // be false when this callback executes.
-          resolved = true;
-          cleanup();
-          logger.api.warn(`${topic} request timed out`);
-          reject(new OrderServiceError(`${topic} request timed out`));
-        }, this.timeoutMs);
-      } catch (error) {
-        cleanup();
-        throw error;
-      }
-    });
   }
 
   private ensureAuthenticated(): void {

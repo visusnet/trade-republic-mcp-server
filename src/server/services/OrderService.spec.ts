@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-non-null-assertion */
 /* eslint-disable @typescript-eslint/unbound-method */
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 
@@ -20,10 +19,13 @@ import { OrderService } from './OrderService';
 import type { TradeRepublicApiService } from './TradeRepublicApiService';
 import {
   AuthStatus,
-  MESSAGE_CODE,
   TradeRepublicError,
-  type WebSocketMessage,
 } from './TradeRepublicApiService.types';
+import {
+  PlaceOrderResponseSchema,
+  GetOrdersResponseSchema,
+  CancelOrderResponseSchema,
+} from './OrderService.response';
 
 /**
  * Creates a mock TradeRepublicApiService for testing.
@@ -33,18 +35,16 @@ function createMockApiService(): jest.Mocked<TradeRepublicApiService> {
     getAuthStatus: jest
       .fn<() => AuthStatus>()
       .mockReturnValue(AuthStatus.AUTHENTICATED),
-    subscribe: jest
-      .fn<(input: { topic: string; payload?: object }) => number>()
-      .mockReturnValue(1),
-    unsubscribe: jest.fn<(id: number) => void>(),
-    onMessage:
-      jest.fn<(handler: (message: WebSocketMessage) => void) => void>(),
-    offMessage:
-      jest.fn<(handler: (message: WebSocketMessage) => void) => void>(),
-    onError:
-      jest.fn<(handler: (error: Error | WebSocketMessage) => void) => void>(),
-    offError:
-      jest.fn<(handler: (error: Error | WebSocketMessage) => void) => void>(),
+    subscribeAndWait: jest
+      .fn<
+        <T>(
+          topic: string,
+          payload: Record<string, unknown>,
+          schema: { safeParse: (data: unknown) => unknown },
+          timeoutMs?: number,
+        ) => Promise<T>
+      >()
+      .mockResolvedValue({} as never),
   } as unknown as jest.Mocked<TradeRepublicApiService>;
 }
 
@@ -526,11 +526,11 @@ describe('OrderService.response', () => {
 describe('OrderService', () => {
   let mockApi: jest.Mocked<TradeRepublicApiService>;
   let service: OrderService;
-  const SHORT_TIMEOUT = 100;
+  const CUSTOM_TIMEOUT = 5000;
 
   beforeEach(() => {
     mockApi = createMockApiService();
-    service = new OrderService(mockApi, SHORT_TIMEOUT);
+    service = new OrderService(mockApi, CUSTOM_TIMEOUT);
   });
 
   describe('placeOrder', () => {
@@ -555,48 +555,7 @@ describe('OrderService', () => {
       ).rejects.toThrow('Not authenticated');
     });
 
-    it('should subscribe to simpleCreateOrder topic with correct payload', async () => {
-      mockApi.subscribe.mockReturnValue(42);
-
-      const promise = service.placeOrder({
-        isin: 'DE0007164600',
-        orderType: 'buy',
-        mode: 'market',
-        size: 10,
-      });
-
-      expect(mockApi.subscribe).toHaveBeenCalledWith({
-        topic: 'simpleCreateOrder',
-        payload: expect.objectContaining({
-          isin: 'DE0007164600',
-          type: 'buy',
-          mode: 'market',
-          size: 10,
-        }),
-      });
-
-      await expect(promise).rejects.toThrow(OrderServiceError);
-      await expect(promise).rejects.toThrow(
-        'simpleCreateOrder request timed out',
-      );
-    });
-
-    it('should place a market buy order successfully', async () => {
-      const subId = 42;
-      mockApi.subscribe.mockReturnValue(subId);
-
-      let messageHandler: ((message: WebSocketMessage) => void) | undefined;
-      mockApi.onMessage.mockImplementation((handler) => {
-        messageHandler = handler;
-      });
-
-      const promise = service.placeOrder({
-        isin: 'DE0007164600',
-        orderType: 'buy',
-        mode: 'market',
-        size: 10,
-      });
-
+    it('should call subscribeAndWait with correct parameters for market order', async () => {
       const orderResponse = {
         orderId: 'order-123',
         status: 'pending',
@@ -611,50 +570,29 @@ describe('OrderService', () => {
         warnings: [],
         timestamp: '2026-02-01T12:00:00Z',
       };
+      mockApi.subscribeAndWait.mockResolvedValue(orderResponse);
 
-      messageHandler!({
-        id: subId,
-        code: MESSAGE_CODE.A,
-        payload: orderResponse,
+      await service.placeOrder({
+        isin: 'DE0007164600',
+        orderType: 'buy',
+        mode: 'market',
+        size: 10,
       });
 
-      const result = await promise;
-
-      expect(result.orderId).toBe('order-123');
-      expect(result.status).toBe('pending');
-      expect(result.orderType).toBe('buy');
-      expect(result.mode).toBe('market');
-      expect(result.size).toBe(10);
+      expect(mockApi.subscribeAndWait).toHaveBeenCalledWith(
+        'simpleCreateOrder',
+        expect.objectContaining({
+          isin: 'DE0007164600',
+          type: 'buy',
+          mode: 'market',
+          size: 10,
+        }),
+        PlaceOrderResponseSchema,
+        CUSTOM_TIMEOUT,
+      );
     });
 
-    it('should place a limit order with limitPrice', async () => {
-      const subId = 42;
-      mockApi.subscribe.mockReturnValue(subId);
-
-      let messageHandler: ((message: WebSocketMessage) => void) | undefined;
-      mockApi.onMessage.mockImplementation((handler) => {
-        messageHandler = handler;
-      });
-
-      const promise = service.placeOrder({
-        isin: 'US0378331005',
-        orderType: 'sell',
-        mode: 'limit',
-        size: 5,
-        limitPrice: 150.5,
-      });
-
-      expect(mockApi.subscribe).toHaveBeenCalledWith({
-        topic: 'simpleCreateOrder',
-        payload: expect.objectContaining({
-          isin: 'US0378331005',
-          type: 'sell',
-          mode: 'limit',
-          size: 5,
-          limit: 150.5,
-        }),
-      });
-
+    it('should pass limit price for limit orders', async () => {
       const orderResponse = {
         orderId: 'order-124',
         status: 'pending',
@@ -666,48 +604,31 @@ describe('OrderService', () => {
         limitPrice: 150.5,
         timestamp: '2026-02-01T12:00:00Z',
       };
+      mockApi.subscribeAndWait.mockResolvedValue(orderResponse);
 
-      messageHandler!({
-        id: subId,
-        code: MESSAGE_CODE.A,
-        payload: orderResponse,
+      await service.placeOrder({
+        isin: 'US0378331005',
+        orderType: 'sell',
+        mode: 'limit',
+        size: 5,
+        limitPrice: 150.5,
       });
 
-      const result = await promise;
-
-      expect(result.orderId).toBe('order-124');
-      expect(result.mode).toBe('limit');
-      expect(result.limitPrice).toBe(150.5);
+      expect(mockApi.subscribeAndWait).toHaveBeenCalledWith(
+        'simpleCreateOrder',
+        expect.objectContaining({
+          isin: 'US0378331005',
+          type: 'sell',
+          mode: 'limit',
+          size: 5,
+          limit: 150.5,
+        }),
+        PlaceOrderResponseSchema,
+        CUSTOM_TIMEOUT,
+      );
     });
 
-    it('should place a stop-market order with stopPrice', async () => {
-      const subId = 42;
-      mockApi.subscribe.mockReturnValue(subId);
-
-      let messageHandler: ((message: WebSocketMessage) => void) | undefined;
-      mockApi.onMessage.mockImplementation((handler) => {
-        messageHandler = handler;
-      });
-
-      const promise = service.placeOrder({
-        isin: 'US0378331005',
-        orderType: 'buy',
-        mode: 'stopMarket',
-        size: 5,
-        stopPrice: 145.0,
-      });
-
-      expect(mockApi.subscribe).toHaveBeenCalledWith({
-        topic: 'simpleCreateOrder',
-        payload: expect.objectContaining({
-          isin: 'US0378331005',
-          type: 'buy',
-          mode: 'stopMarket',
-          size: 5,
-          stop: 145.0,
-        }),
-      });
-
+    it('should pass stop price for stop-market orders', async () => {
       const orderResponse = {
         orderId: 'order-125',
         status: 'pending',
@@ -719,132 +640,173 @@ describe('OrderService', () => {
         stopPrice: 145.0,
         timestamp: '2026-02-01T12:00:00Z',
       };
+      mockApi.subscribeAndWait.mockResolvedValue(orderResponse);
 
-      messageHandler!({
-        id: subId,
-        code: MESSAGE_CODE.A,
-        payload: orderResponse,
+      await service.placeOrder({
+        isin: 'US0378331005',
+        orderType: 'buy',
+        mode: 'stopMarket',
+        size: 5,
+        stopPrice: 145.0,
       });
 
-      const result = await promise;
-
-      expect(result.orderId).toBe('order-125');
-      expect(result.mode).toBe('stopMarket');
-      expect(result.stopPrice).toBe(145.0);
+      expect(mockApi.subscribeAndWait).toHaveBeenCalledWith(
+        'simpleCreateOrder',
+        expect.objectContaining({
+          isin: 'US0378331005',
+          type: 'buy',
+          mode: 'stopMarket',
+          size: 5,
+          stop: 145.0,
+        }),
+        PlaceOrderResponseSchema,
+        CUSTOM_TIMEOUT,
+      );
     });
 
-    it('should handle gtd expiry with expiryDate', async () => {
-      const subId = 42;
-      mockApi.subscribe.mockReturnValue(subId);
+    it('should pass optional expiry field', async () => {
+      mockApi.subscribeAndWait.mockResolvedValue({ orderId: 'order-126' });
 
-      let messageHandler: ((message: WebSocketMessage) => void) | undefined;
-      mockApi.onMessage.mockImplementation((handler) => {
-        messageHandler = handler;
+      await service.placeOrder({
+        isin: 'DE0007164600',
+        orderType: 'buy',
+        mode: 'market',
+        size: 10,
+        expiry: 'gtc',
       });
 
-      const promise = service.placeOrder({
+      expect(mockApi.subscribeAndWait).toHaveBeenCalledWith(
+        'simpleCreateOrder',
+        expect.objectContaining({
+          expiry: 'gtc',
+        }),
+        PlaceOrderResponseSchema,
+        CUSTOM_TIMEOUT,
+      );
+    });
+
+    it('should pass optional exchange field as exchangeId', async () => {
+      mockApi.subscribeAndWait.mockResolvedValue({ orderId: 'order-127' });
+
+      await service.placeOrder({
+        isin: 'DE0007164600',
+        orderType: 'buy',
+        mode: 'market',
+        size: 10,
+        exchange: 'XETRA',
+      });
+
+      expect(mockApi.subscribeAndWait).toHaveBeenCalledWith(
+        'simpleCreateOrder',
+        expect.objectContaining({
+          exchangeId: 'XETRA',
+        }),
+        PlaceOrderResponseSchema,
+        CUSTOM_TIMEOUT,
+      );
+    });
+
+    it('should pass optional sellFractions field', async () => {
+      mockApi.subscribeAndWait.mockResolvedValue({ orderId: 'order-128' });
+
+      await service.placeOrder({
+        isin: 'DE0007164600',
+        orderType: 'sell',
+        mode: 'market',
+        size: 10,
+        sellFractions: true,
+      });
+
+      expect(mockApi.subscribeAndWait).toHaveBeenCalledWith(
+        'simpleCreateOrder',
+        expect.objectContaining({
+          sellFractions: true,
+        }),
+        PlaceOrderResponseSchema,
+        CUSTOM_TIMEOUT,
+      );
+    });
+
+    it('should pass optional warningsShown field', async () => {
+      mockApi.subscribeAndWait.mockResolvedValue({ orderId: 'order-129' });
+
+      await service.placeOrder({
+        isin: 'DE0007164600',
+        orderType: 'buy',
+        mode: 'market',
+        size: 10,
+        warningsShown: ['RISK_WARNING'],
+      });
+
+      expect(mockApi.subscribeAndWait).toHaveBeenCalledWith(
+        'simpleCreateOrder',
+        expect.objectContaining({
+          warningsShown: ['RISK_WARNING'],
+        }),
+        PlaceOrderResponseSchema,
+        CUSTOM_TIMEOUT,
+      );
+    });
+
+    it('should pass optional expiryDate field', async () => {
+      mockApi.subscribeAndWait.mockResolvedValue({ orderId: 'order-130' });
+
+      await service.placeOrder({
         isin: 'DE0007164600',
         orderType: 'buy',
         mode: 'limit',
         size: 10,
-        limitPrice: 100,
+        limitPrice: 100.0,
         expiry: 'gtd',
         expiryDate: '2026-12-31',
       });
 
-      expect(mockApi.subscribe).toHaveBeenCalledWith({
-        topic: 'simpleCreateOrder',
-        payload: expect.objectContaining({
-          expiry: 'gtd',
+      expect(mockApi.subscribeAndWait).toHaveBeenCalledWith(
+        'simpleCreateOrder',
+        expect.objectContaining({
           expiryDate: '2026-12-31',
         }),
-      });
+        PlaceOrderResponseSchema,
+        CUSTOM_TIMEOUT,
+      );
+    });
 
+    it('should return order response from subscribeAndWait', async () => {
       const orderResponse = {
-        orderId: 'order-126',
+        orderId: 'order-123',
         status: 'pending',
         isin: 'DE0007164600',
         exchange: 'LSX',
         orderType: 'buy',
-        mode: 'limit',
+        mode: 'market',
         size: 10,
-        limitPrice: 100,
+        estimatedPrice: 100.5,
+        estimatedCost: 1005.0,
+        estimatedFees: 1.0,
+        warnings: [],
         timestamp: '2026-02-01T12:00:00Z',
       };
+      mockApi.subscribeAndWait.mockResolvedValue(orderResponse);
 
-      messageHandler!({
-        id: subId,
-        code: MESSAGE_CODE.A,
-        payload: orderResponse,
-      });
-
-      const result = await promise;
-
-      expect(result.orderId).toBe('order-126');
-    });
-
-    it('should reject on API error (code E)', async () => {
-      const subId = 42;
-      mockApi.subscribe.mockReturnValue(subId);
-
-      let messageHandler: ((message: WebSocketMessage) => void) | undefined;
-      mockApi.onMessage.mockImplementation((handler) => {
-        messageHandler = handler;
-      });
-
-      const promise = service.placeOrder({
+      const result = await service.placeOrder({
         isin: 'DE0007164600',
         orderType: 'buy',
         mode: 'market',
         size: 10,
       });
 
-      messageHandler!({
-        id: subId,
-        code: MESSAGE_CODE.E,
-        payload: { message: 'Insufficient funds' },
-      });
-
-      await expect(promise).rejects.toThrow('Insufficient funds');
+      expect(result.orderId).toBe('order-123');
+      expect(result.status).toBe('pending');
+      expect(result.orderType).toBe('buy');
+      expect(result.mode).toBe('market');
+      expect(result.size).toBe(10);
     });
 
-    it('should use fallback error message when error payload has no message', async () => {
-      const subId = 42;
-      mockApi.subscribe.mockReturnValue(subId);
+    it('should propagate errors from subscribeAndWait', async () => {
+      mockApi.subscribeAndWait.mockRejectedValue(
+        new TradeRepublicError('simpleCreateOrder request timed out'),
+      );
 
-      let messageHandler: ((message: WebSocketMessage) => void) | undefined;
-      mockApi.onMessage.mockImplementation((handler) => {
-        messageHandler = handler;
-      });
-
-      const promise = service.placeOrder({
-        isin: 'DE0007164600',
-        orderType: 'buy',
-        mode: 'market',
-        size: 10,
-      });
-
-      messageHandler!({
-        id: subId,
-        code: MESSAGE_CODE.E,
-        payload: {},
-      });
-
-      await expect(promise).rejects.toThrow(OrderServiceError);
-      await expect(promise).rejects.toThrow('API error');
-    });
-
-    it('should handle timeout', async () => {
-      mockApi.subscribe.mockReturnValue(42);
-
-      await expect(
-        service.placeOrder({
-          isin: 'DE0007164600',
-          orderType: 'buy',
-          mode: 'market',
-          size: 10,
-        }),
-      ).rejects.toThrow(OrderServiceError);
       await expect(
         service.placeOrder({
           isin: 'DE0007164600',
@@ -855,259 +817,23 @@ describe('OrderService', () => {
       ).rejects.toThrow('simpleCreateOrder request timed out');
     });
 
-    it('should ignore messages with different subscription id', async () => {
-      const subId = 42;
-      mockApi.subscribe.mockReturnValue(subId);
-
-      let messageHandler: ((message: WebSocketMessage) => void) | undefined;
-      mockApi.onMessage.mockImplementation((handler) => {
-        messageHandler = handler;
-      });
-
-      const promise = service.placeOrder({
-        isin: 'DE0007164600',
-        orderType: 'buy',
-        mode: 'market',
-        size: 10,
-      });
-
-      // Send message with wrong subscription id
-      messageHandler!({
-        id: 999,
-        code: MESSAGE_CODE.A,
-        payload: { orderId: 'wrong' },
-      });
-
-      // Send correct message
-      const orderResponse = {
+    it('should log the order request', async () => {
+      mockApi.subscribeAndWait.mockResolvedValue({
         orderId: 'order-123',
         status: 'pending',
-        isin: 'DE0007164600',
-        exchange: 'LSX',
-        orderType: 'buy',
-        mode: 'market',
-        size: 10,
-        timestamp: '2026-02-01T12:00:00Z',
-      };
-
-      messageHandler!({
-        id: subId,
-        code: MESSAGE_CODE.A,
-        payload: orderResponse,
       });
 
-      const result = await promise;
-
-      expect(result.orderId).toBe('order-123');
-    });
-
-    it('should reject on validation error', async () => {
-      const subId = 42;
-      mockApi.subscribe.mockReturnValue(subId);
-
-      let messageHandler: ((message: WebSocketMessage) => void) | undefined;
-      mockApi.onMessage.mockImplementation((handler) => {
-        messageHandler = handler;
-      });
-
-      const promise = service.placeOrder({
+      await service.placeOrder({
         isin: 'DE0007164600',
         orderType: 'buy',
         mode: 'market',
         size: 10,
       });
 
-      // Send invalid response (missing required fields)
-      messageHandler!({
-        id: subId,
-        code: MESSAGE_CODE.A,
-        payload: { invalid: 'data' },
-      });
-
-      await expect(promise).rejects.toThrow(OrderServiceError);
-    });
-
-    it('should handle WebSocket error with Error object', async () => {
-      const subId = 42;
-      mockApi.subscribe.mockReturnValue(subId);
-
-      let errorHandler: ((error: Error | WebSocketMessage) => void) | undefined;
-      mockApi.onError.mockImplementation((handler) => {
-        errorHandler = handler;
-      });
-
-      const promise = service.placeOrder({
-        isin: 'DE0007164600',
-        orderType: 'buy',
-        mode: 'market',
-        size: 10,
-      });
-
-      errorHandler!(new Error('WebSocket connection failed'));
-
-      await expect(promise).rejects.toThrow('WebSocket connection failed');
-    });
-
-    it('should handle WebSocket error with message object', async () => {
-      const subId = 42;
-      mockApi.subscribe.mockReturnValue(subId);
-
-      let errorHandler: ((error: Error | WebSocketMessage) => void) | undefined;
-      mockApi.onError.mockImplementation((handler) => {
-        errorHandler = handler;
-      });
-
-      const promise = service.placeOrder({
-        isin: 'DE0007164600',
-        orderType: 'buy',
-        mode: 'market',
-        size: 10,
-      });
-
-      errorHandler!({ id: subId, code: MESSAGE_CODE.E, payload: {} });
-
-      await expect(promise).rejects.toThrow(OrderServiceError);
-      await expect(promise).rejects.toThrow('WebSocket error');
-    });
-
-    it('should handle subscription throw error', async () => {
-      mockApi.subscribe.mockImplementation(() => {
-        throw new Error('Subscription failed');
-      });
-
-      await expect(
-        service.placeOrder({
-          isin: 'DE0007164600',
-          orderType: 'buy',
-          mode: 'market',
-          size: 10,
-        }),
-      ).rejects.toThrow('Subscription failed');
-    });
-
-    it('should include optional fields in payload when provided', async () => {
-      const subId = 42;
-      mockApi.subscribe.mockReturnValue(subId);
-
-      const promise = service.placeOrder({
-        isin: 'DE0007164600',
-        orderType: 'buy',
-        mode: 'market',
-        size: 10,
-        exchange: 'XETRA',
-        sellFractions: true,
-        warningsShown: ['warning1', 'warning2'],
-        expiry: 'gtc',
-      });
-
-      expect(mockApi.subscribe).toHaveBeenCalledWith({
-        topic: 'simpleCreateOrder',
-        payload: expect.objectContaining({
-          isin: 'DE0007164600',
-          type: 'buy',
-          mode: 'market',
-          size: 10,
-          exchangeId: 'XETRA',
-          sellFractions: true,
-          warningsShown: ['warning1', 'warning2'],
-          expiry: 'gtc',
-        }),
-      });
-
-      await expect(promise).rejects.toThrow(OrderServiceError);
-    });
-
-    it('should ignore error handler call after resolution', async () => {
-      const subId = 42;
-      mockApi.subscribe.mockReturnValue(subId);
-
-      let messageHandler: ((message: WebSocketMessage) => void) | undefined;
-      let errorHandler: ((error: Error | WebSocketMessage) => void) | undefined;
-      mockApi.onMessage.mockImplementation((handler) => {
-        messageHandler = handler;
-      });
-      mockApi.onError.mockImplementation((handler) => {
-        errorHandler = handler;
-      });
-
-      const promise = service.placeOrder({
-        isin: 'DE0007164600',
-        orderType: 'buy',
-        mode: 'market',
-        size: 10,
-      });
-
-      const orderResponse = {
-        orderId: 'order-123',
-        status: 'pending',
-        isin: 'DE0007164600',
-        exchange: 'LSX',
-        orderType: 'buy',
-        mode: 'market',
-        size: 10,
-        timestamp: '2026-02-01T12:00:00Z',
-      };
-
-      // First resolve with success
-      messageHandler!({
-        id: subId,
-        code: MESSAGE_CODE.A,
-        payload: orderResponse,
-      });
-
-      // Then try to trigger error handler (should be ignored)
-      errorHandler!(new Error('This should be ignored'));
-
-      const result = await promise;
-      expect(result.orderId).toBe('order-123');
-    });
-
-    it('should clear timeout when resolved successfully', async () => {
-      jest.useFakeTimers();
-      const subId = 42;
-      mockApi.subscribe.mockReturnValue(subId);
-
-      let messageHandler: ((message: WebSocketMessage) => void) | undefined;
-      mockApi.onMessage.mockImplementation((handler) => {
-        messageHandler = handler;
-      });
-
-      const promise = service.placeOrder({
-        isin: 'DE0007164600',
-        orderType: 'buy',
-        mode: 'market',
-        size: 10,
-      });
-
-      const orderResponse = {
-        orderId: 'order-123',
-        status: 'pending',
-        isin: 'DE0007164600',
-        exchange: 'LSX',
-        orderType: 'buy',
-        mode: 'market',
-        size: 10,
-        timestamp: '2026-02-01T12:00:00Z',
-      };
-
-      // Resolve with success - this triggers cleanup() which clears the timeout
-      messageHandler!({
-        id: subId,
-        code: MESSAGE_CODE.A,
-        payload: orderResponse,
-      });
-
-      const result = await promise;
-      expect(result.orderId).toBe('order-123');
-
-      // Advance timers - timeout should have been cleared so nothing happens
-      jest.advanceTimersByTime(SHORT_TIMEOUT + 10);
-      jest.runAllTimers();
-
-      // Promise should still be resolved with original result
-      expect(result.orderId).toBe('order-123');
-
-      jest.useRealTimers();
+      expect(logger.api.info).toHaveBeenCalledWith(
+        expect.objectContaining({ request: expect.any(Object) }),
+        'Placing order',
+      );
     });
   });
 
@@ -1119,31 +845,25 @@ describe('OrderService', () => {
       await expect(service.getOrders()).rejects.toThrow('Not authenticated');
     });
 
-    it('should subscribe to orders topic', async () => {
-      mockApi.subscribe.mockReturnValue(42);
+    it('should call subscribeAndWait with correct parameters', async () => {
+      const ordersResponse = {
+        orders: [],
+        totalCount: 0,
+        timestamp: '2026-02-01T12:00:00Z',
+      };
+      mockApi.subscribeAndWait.mockResolvedValue(ordersResponse);
 
-      const promise = service.getOrders();
+      await service.getOrders();
 
-      expect(mockApi.subscribe).toHaveBeenCalledWith({
-        topic: 'orders',
-        payload: undefined,
-      });
-
-      await expect(promise).rejects.toThrow(OrderServiceError);
-      await expect(promise).rejects.toThrow('orders request timed out');
+      expect(mockApi.subscribeAndWait).toHaveBeenCalledWith(
+        'orders',
+        {},
+        GetOrdersResponseSchema,
+        CUSTOM_TIMEOUT,
+      );
     });
 
-    it('should retrieve orders successfully', async () => {
-      const subId = 42;
-      mockApi.subscribe.mockReturnValue(subId);
-
-      let messageHandler: ((message: WebSocketMessage) => void) | undefined;
-      mockApi.onMessage.mockImplementation((handler) => {
-        messageHandler = handler;
-      });
-
-      const promise = service.getOrders();
-
+    it('should return orders from subscribeAndWait', async () => {
       const ordersResponse = {
         orders: [
           {
@@ -1157,87 +877,38 @@ describe('OrderService', () => {
             limitPrice: 100.0,
             createdAt: '2026-02-01T10:00:00Z',
           },
-          {
-            orderId: 'order-2',
-            status: 'executed',
-            isin: 'US0378331005',
-            exchange: 'LSX',
-            orderType: 'sell',
-            mode: 'market',
-            size: 5,
-            executedSize: 5,
-            executedPrice: 150.5,
-            createdAt: '2026-02-01T11:00:00Z',
-          },
         ],
-        totalCount: 2,
+        totalCount: 1,
         timestamp: '2026-02-01T12:00:00Z',
       };
+      mockApi.subscribeAndWait.mockResolvedValue(ordersResponse);
 
-      messageHandler!({
-        id: subId,
-        code: MESSAGE_CODE.A,
-        payload: ordersResponse,
-      });
+      const result = await service.getOrders();
 
-      const result = await promise;
-
-      expect(result.orders).toHaveLength(2);
+      expect(result.orders).toHaveLength(1);
       expect(result.orders[0].orderId).toBe('order-1');
-      expect(result.orders[0].status).toBe('pending');
-      expect(result.orders[1].orderId).toBe('order-2');
-      expect(result.orders[1].status).toBe('executed');
-      expect(result.totalCount).toBe(2);
+      expect(result.totalCount).toBe(1);
     });
 
-    it('should handle empty orders list', async () => {
-      const subId = 42;
-      mockApi.subscribe.mockReturnValue(subId);
+    it('should propagate errors from subscribeAndWait', async () => {
+      mockApi.subscribeAndWait.mockRejectedValue(
+        new TradeRepublicError('orders request timed out'),
+      );
 
-      let messageHandler: ((message: WebSocketMessage) => void) | undefined;
-      mockApi.onMessage.mockImplementation((handler) => {
-        messageHandler = handler;
-      });
+      await expect(service.getOrders()).rejects.toThrow(
+        'orders request timed out',
+      );
+    });
 
-      const promise = service.getOrders();
-
-      const ordersResponse = {
+    it('should log the request', async () => {
+      mockApi.subscribeAndWait.mockResolvedValue({
         orders: [],
         totalCount: 0,
-        timestamp: '2026-02-01T12:00:00Z',
-      };
-
-      messageHandler!({
-        id: subId,
-        code: MESSAGE_CODE.A,
-        payload: ordersResponse,
       });
 
-      const result = await promise;
+      await service.getOrders();
 
-      expect(result.orders).toHaveLength(0);
-      expect(result.totalCount).toBe(0);
-    });
-
-    it('should reject on API error', async () => {
-      const subId = 42;
-      mockApi.subscribe.mockReturnValue(subId);
-
-      let messageHandler: ((message: WebSocketMessage) => void) | undefined;
-      mockApi.onMessage.mockImplementation((handler) => {
-        messageHandler = handler;
-      });
-
-      const promise = service.getOrders();
-
-      messageHandler!({
-        id: subId,
-        code: MESSAGE_CODE.E,
-        payload: { message: 'Failed to retrieve orders' },
-      });
-
-      await expect(promise).rejects.toThrow(OrderServiceError);
-      await expect(promise).rejects.toThrow('Failed to retrieve orders');
+      expect(logger.api.info).toHaveBeenCalledWith('Requesting orders');
     });
   });
 
@@ -1253,91 +924,62 @@ describe('OrderService', () => {
       ).rejects.toThrow('Not authenticated');
     });
 
-    it('should subscribe to cancelOrder topic with orderId', async () => {
-      mockApi.subscribe.mockReturnValue(42);
-
-      const promise = service.cancelOrder({ orderId: 'order-123' });
-
-      expect(mockApi.subscribe).toHaveBeenCalledWith({
-        topic: 'cancelOrder',
-        payload: { orderId: 'order-123' },
-      });
-
-      await expect(promise).rejects.toThrow(OrderServiceError);
-      await expect(promise).rejects.toThrow('cancelOrder request timed out');
-    });
-
-    it('should cancel order successfully', async () => {
-      const subId = 42;
-      mockApi.subscribe.mockReturnValue(subId);
-
-      let messageHandler: ((message: WebSocketMessage) => void) | undefined;
-      mockApi.onMessage.mockImplementation((handler) => {
-        messageHandler = handler;
-      });
-
-      const promise = service.cancelOrder({ orderId: 'order-123' });
-
+    it('should call subscribeAndWait with correct parameters', async () => {
       const cancelResponse = {
         orderId: 'order-123',
         status: 'cancelled',
         cancelled: true,
         timestamp: '2026-02-01T12:00:00Z',
       };
+      mockApi.subscribeAndWait.mockResolvedValue(cancelResponse);
 
-      messageHandler!({
-        id: subId,
-        code: MESSAGE_CODE.A,
-        payload: cancelResponse,
-      });
+      await service.cancelOrder({ orderId: 'order-123' });
 
-      const result = await promise;
+      expect(mockApi.subscribeAndWait).toHaveBeenCalledWith(
+        'cancelOrder',
+        { orderId: 'order-123' },
+        CancelOrderResponseSchema,
+        CUSTOM_TIMEOUT,
+      );
+    });
+
+    it('should return cancel response from subscribeAndWait', async () => {
+      const cancelResponse = {
+        orderId: 'order-123',
+        status: 'cancelled',
+        cancelled: true,
+        timestamp: '2026-02-01T12:00:00Z',
+      };
+      mockApi.subscribeAndWait.mockResolvedValue(cancelResponse);
+
+      const result = await service.cancelOrder({ orderId: 'order-123' });
 
       expect(result.orderId).toBe('order-123');
-      expect(result.status).toBe('cancelled');
       expect(result.cancelled).toBe(true);
     });
 
-    it('should reject when order not found', async () => {
-      const subId = 42;
-      mockApi.subscribe.mockReturnValue(subId);
+    it('should propagate errors from subscribeAndWait', async () => {
+      mockApi.subscribeAndWait.mockRejectedValue(
+        new TradeRepublicError('Order already executed'),
+      );
 
-      let messageHandler: ((message: WebSocketMessage) => void) | undefined;
-      mockApi.onMessage.mockImplementation((handler) => {
-        messageHandler = handler;
-      });
-
-      const promise = service.cancelOrder({ orderId: 'nonexistent' });
-
-      messageHandler!({
-        id: subId,
-        code: MESSAGE_CODE.E,
-        payload: { message: 'Order not found' },
-      });
-
-      await expect(promise).rejects.toThrow(OrderServiceError);
-      await expect(promise).rejects.toThrow('Order not found');
+      await expect(
+        service.cancelOrder({ orderId: 'order-123' }),
+      ).rejects.toThrow('Order already executed');
     });
 
-    it('should reject when order cannot be cancelled', async () => {
-      const subId = 42;
-      mockApi.subscribe.mockReturnValue(subId);
-
-      let messageHandler: ((message: WebSocketMessage) => void) | undefined;
-      mockApi.onMessage.mockImplementation((handler) => {
-        messageHandler = handler;
+    it('should log the cancel request', async () => {
+      mockApi.subscribeAndWait.mockResolvedValue({
+        orderId: 'order-123',
+        cancelled: true,
       });
 
-      const promise = service.cancelOrder({ orderId: 'order-123' });
+      await service.cancelOrder({ orderId: 'order-123' });
 
-      messageHandler!({
-        id: subId,
-        code: MESSAGE_CODE.E,
-        payload: { message: 'Order already executed' },
-      });
-
-      await expect(promise).rejects.toThrow(OrderServiceError);
-      await expect(promise).rejects.toThrow('Order already executed');
+      expect(logger.api.info).toHaveBeenCalledWith(
+        { orderId: 'order-123' },
+        'Cancelling order',
+      );
     });
   });
 

@@ -10,9 +10,7 @@ import { logger } from '../../logger';
 import type { TradeRepublicApiService } from './TradeRepublicApiService';
 import {
   AuthStatus,
-  MESSAGE_CODE,
   TradeRepublicError,
-  type WebSocketMessage,
 } from './TradeRepublicApiService.types';
 import {
   DEFAULT_EXCHANGE,
@@ -60,10 +58,11 @@ export class MarketDataService {
 
     logger.api.info({ isin: request.isin, exchange }, 'Requesting price data');
 
-    const tickerData = await this.subscribeAndWait(
+    const tickerData = await this.api.subscribeAndWait(
       'ticker',
       { id: tickerId },
       TickerApiResponseSchema,
+      this.timeoutMs,
     );
 
     const bid = tickerData.bid.price;
@@ -99,10 +98,11 @@ export class MarketDataService {
       'Requesting price history',
     );
 
-    const historyData = await this.subscribeAndWait(
+    const historyData = await this.api.subscribeAndWait(
       'aggregateHistory',
       { id: tickerId, range: request.range },
       AggregateHistoryApiSchema,
+      this.timeoutMs,
     );
 
     return {
@@ -134,10 +134,11 @@ export class MarketDataService {
 
     logger.api.info({ isin: request.isin, exchange }, 'Requesting order book');
 
-    const tickerData = await this.subscribeAndWait(
+    const tickerData = await this.api.subscribeAndWait(
       'ticker',
       { id: tickerId },
       TickerApiResponseSchema,
+      this.timeoutMs,
     );
 
     const bidPrice = tickerData.bid.price;
@@ -167,10 +168,11 @@ export class MarketDataService {
 
     logger.api.info({ query: request.query, limit }, 'Searching assets');
 
-    const searchData = await this.subscribeAndWait(
+    const searchData = await this.api.subscribeAndWait(
       'neonSearch',
       { data: { q: request.query } },
       NeonSearchApiSchema,
+      this.timeoutMs,
     );
 
     const totalCount = searchData.results.length;
@@ -197,10 +199,11 @@ export class MarketDataService {
 
     logger.api.info({ isin: request.isin }, 'Requesting asset info');
 
-    const instrumentData = await this.subscribeAndWait(
+    const instrumentData = await this.api.subscribeAndWait(
       'instrument',
       { id: request.isin },
       InstrumentApiSchema,
+      this.timeoutMs,
     );
 
     return {
@@ -238,10 +241,11 @@ export class MarketDataService {
 
     logger.api.info({ isin: request.isin, exchange }, 'Checking market status');
 
-    const tickerData = await this.subscribeAndWait(
+    const tickerData = await this.api.subscribeAndWait(
       'ticker',
       { id: tickerId },
       TickerApiResponseSchema,
+      this.timeoutMs,
     );
 
     const hasBid = tickerData.bid.price > 0;
@@ -324,126 +328,6 @@ export class MarketDataService {
       timedOut,
       timestamp: new Date().toISOString(),
     };
-  }
-
-  /**
-   * Subscribe to a WebSocket topic and wait for a response.
-   */
-  private subscribeAndWait<T>(
-    topic: string,
-    payload: Record<string, unknown>,
-    schema: {
-      safeParse: (
-        data: unknown,
-      ) => { success: true; data: T } | { success: false; error: unknown };
-    },
-  ): Promise<T> {
-    return new Promise((resolve, reject) => {
-      let subscriptionId: number | null = null;
-      let timeoutId: NodeJS.Timeout | null = null;
-      let resolved = false;
-
-      const cleanup = (): void => {
-        if (timeoutId) {
-          clearTimeout(timeoutId);
-          timeoutId = null;
-        }
-        this.api.offMessage(messageHandler);
-        this.api.offError(errorHandler);
-        if (subscriptionId !== null) {
-          try {
-            this.api.unsubscribe(subscriptionId);
-          } catch {
-            // Ignore unsubscribe errors during cleanup
-          }
-        }
-      };
-
-      const messageHandler = (message: WebSocketMessage): void => {
-        if (resolved || message.id !== subscriptionId) {
-          return;
-        }
-
-        if (message.code === MESSAGE_CODE.E) {
-          resolved = true;
-          cleanup();
-          const errorPayload = message.payload as
-            | { message?: string }
-            | undefined;
-          const errorMessage = errorPayload?.message || 'API error';
-          logger.api.error(
-            { payload: message.payload },
-            `${topic} subscription error`,
-          );
-          reject(new TradeRepublicError(errorMessage));
-          return;
-        }
-
-        if (message.code === MESSAGE_CODE.A) {
-          resolved = true;
-          cleanup();
-          const parseResult = schema.safeParse(message.payload);
-          if (parseResult.success) {
-            logger.api.debug({ topic }, 'Received subscription data');
-            resolve(parseResult.data);
-          } else {
-            logger.api.error(
-              { err: parseResult.error },
-              `Failed to parse ${topic} response`,
-            );
-            reject(new TradeRepublicError(`Invalid ${topic} response format`));
-          }
-        }
-      };
-
-      const errorHandler = (error: Error | WebSocketMessage): void => {
-        if (resolved) {
-          return;
-        }
-        if (error instanceof Error) {
-          resolved = true;
-          cleanup();
-          reject(error);
-        } else if (error.id === subscriptionId) {
-          resolved = true;
-          cleanup();
-          const payload = error.payload as { message?: string } | undefined;
-          reject(
-            new TradeRepublicError(payload?.message || String(error.payload)),
-          );
-        }
-      };
-
-      this.api.onMessage(messageHandler);
-      this.api.onError(errorHandler);
-
-      timeoutId = setTimeout(() => {
-        if (!resolved) {
-          resolved = true;
-          cleanup();
-          logger.api.error(
-            `${topic} subscription timed out after ${this.timeoutMs}ms`,
-          );
-          reject(new TradeRepublicError(`${topic} request timed out`));
-        }
-      }, this.timeoutMs);
-
-      try {
-        subscriptionId = this.api.subscribe({ topic, payload });
-        logger.api.debug(
-          { topic, subscriptionId, payload },
-          'Subscribed to topic',
-        );
-      } catch (error) {
-        resolved = true;
-        cleanup();
-        if (error instanceof Error) {
-          reject(error);
-        } else {
-          reject(new TradeRepublicError(String(error)));
-        }
-      }
-    });
   }
 
   /**

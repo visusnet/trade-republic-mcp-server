@@ -290,8 +290,13 @@ describe('Services Index', () => {
   });
 
   describe('createTradeRepublicApiService', () => {
+    const testCredentials = {
+      phoneNumber: '+491234567890',
+      pin: '1234',
+    };
+
     it('should create a TradeRepublicApiService instance', () => {
-      const service = createTradeRepublicApiService();
+      const service = createTradeRepublicApiService(testCredentials);
 
       expect(service).toBeInstanceOf(TradeRepublicApiService);
     });
@@ -299,6 +304,7 @@ describe('Services Index', () => {
     it('should use custom config directory if provided', () => {
       const customDir = '/custom/config/dir';
       const service = createTradeRepublicApiService({
+        ...testCredentials,
         configDir: customDir,
       });
 
@@ -306,7 +312,7 @@ describe('Services Index', () => {
     });
 
     it('should use default config directory based on home dir', () => {
-      const service = createTradeRepublicApiService();
+      const service = createTradeRepublicApiService(testCredentials);
       // Just verify it works with defaults
       expect(service).toBeInstanceOf(TradeRepublicApiService);
     });
@@ -320,6 +326,7 @@ describe('Services Index', () => {
       };
 
       const service = createTradeRepublicApiService({
+        ...testCredentials,
         fileSystem: customFileSystem,
       });
 
@@ -330,6 +337,7 @@ describe('Services Index', () => {
       const customFetch = jest.fn() as unknown as typeof fetch;
 
       const service = createTradeRepublicApiService({
+        ...testCredentials,
         fetchFn: customFetch,
       });
 

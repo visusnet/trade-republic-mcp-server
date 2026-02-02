@@ -134,6 +134,10 @@ export function defaultWebSocketFactory(
  * Options for creating the Trade Republic API service.
  */
 export interface CreateTradeRepublicApiServiceOptions {
+  /** Trade Republic account phone number */
+  phoneNumber: string;
+  /** Trade Republic account PIN */
+  pin: string;
   /** Custom config directory. Defaults to ~/.trade-republic-mcp/ */
   configDir?: string;
   /** Custom file system implementation. Defaults to Node.js fs. */
@@ -155,7 +159,7 @@ export interface CreateTradeRepublicApiServiceOptions {
  * @returns A configured TradeRepublicApiService instance
  */
 export function createTradeRepublicApiService(
-  options: CreateTradeRepublicApiServiceOptions = {},
+  options: CreateTradeRepublicApiServiceOptions,
 ): TradeRepublicApiService {
   const configDir =
     options.configDir ?? path.join(os.homedir(), DEFAULT_CONFIG_DIR);
@@ -165,5 +169,10 @@ export function createTradeRepublicApiService(
   const cryptoManager = new CryptoManager(configDir, fileSystem);
   const webSocketManager = new WebSocketManager(defaultWebSocketFactory);
 
-  return new TradeRepublicApiService(cryptoManager, webSocketManager, fetchFn);
+  return new TradeRepublicApiService(
+    { phoneNumber: options.phoneNumber, pin: options.pin },
+    cryptoManager,
+    webSocketManager,
+    fetchFn,
+  );
 }

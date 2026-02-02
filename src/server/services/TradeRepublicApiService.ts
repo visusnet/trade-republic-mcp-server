@@ -16,7 +16,6 @@ import {
   TwoFactorCodeSchema,
   type CredentialsInput,
   type SubscribeRequestInput,
-  type TwoFactorCodeInput,
 } from './TradeRepublicApiService.request';
 import {
   ErrorResponseSchema,
@@ -27,6 +26,7 @@ import {
   AuthStatus,
   DEFAULT_SESSION_DURATION_MS,
   HTTP_TIMEOUT_MS,
+  MESSAGE_CODE,
   TR_API_URL,
   TradeRepublicError,
   type FetchFunction,
@@ -38,6 +38,9 @@ import type { WebSocketManager } from './TradeRepublicApiService.websocket';
 
 /** Session expiration buffer (30 seconds before actual expiration) */
 const SESSION_EXPIRATION_BUFFER_MS = 30 * 1000;
+
+/** Default timeout for WebSocket subscriptions (30 seconds) */
+const DEFAULT_SUBSCRIPTION_TIMEOUT_MS = 30_000;
 
 /** Retry configuration per ADR-001 */
 const RETRY_CONFIG = {
@@ -56,12 +59,10 @@ const RETRY_CONFIG = {
  * the Trade Republic API.
  *
  * Usage:
- * 1. Create service with dependencies
- * 2. Call initialize() to load/generate keys
- * 3. Call login() with phone/PIN
- * 4. Call verify2FA() with the code received via SMS
- * 5. Use subscribe() for real-time data
- * 6. Call disconnect() when done
+ * 1. Create service with credentials and dependencies
+ * 2. Call connect(twoFactorCode) to authenticate
+ * 3. Use subscribeAndWait() for data retrieval
+ * 4. Call disconnect() when done
  */
 export class TradeRepublicApiService {
   private keyPair: KeyPair | null = null;
@@ -77,11 +78,23 @@ export class TradeRepublicApiService {
   /** Throttled fetch function - max 1 request per second (per ADR-001) */
   private readonly throttledFetch: FetchFunction;
 
+  /** Stored credentials for authentication */
+  private readonly credentials: { phoneNumber: string; pin: string };
+
   constructor(
+    credentials: CredentialsInput,
     private readonly crypto: CryptoManager,
     private readonly ws: WebSocketManager,
     private readonly fetchFn: FetchFunction,
   ) {
+    // Validate credentials at construction time
+    const validationResult = CredentialsSchema.safeParse(credentials);
+    if (!validationResult.success) {
+      throw new AuthenticationError(
+        `Invalid credentials: ${validationResult.error.message}`,
+      );
+    }
+    this.credentials = validationResult.data;
     // Rate limit: 1 request per second (per ADR-001)
     const throttle = pThrottle({ limit: 1, interval: 1000 });
 
@@ -106,9 +119,31 @@ export class TradeRepublicApiService {
   }
 
   /**
+   * Connects to the Trade Republic API with 2FA verification.
+   * Handles initialization, login, and 2FA in one call.
+   *
+   * @param twoFactorCode - The 2FA code received via SMS
+   */
+  public async connect(twoFactorCode: string): Promise<void> {
+    // Validate 2FA code
+    const validationResult = TwoFactorCodeSchema.safeParse({
+      code: twoFactorCode,
+    });
+    if (!validationResult.success) {
+      throw new AuthenticationError(
+        `Invalid 2FA code: ${validationResult.error.message}`,
+      );
+    }
+
+    await this.initialize();
+    await this.login();
+    await this.verify2FA(validationResult.data.code);
+  }
+
+  /**
    * Initializes the service by loading or generating ECDSA key pair.
    */
-  public async initialize(): Promise<void> {
+  private async initialize(): Promise<void> {
     logger.api.info('Initializing TradeRepublicApiService');
 
     if (await this.crypto.hasStoredKeyPair()) {
@@ -125,23 +160,12 @@ export class TradeRepublicApiService {
   }
 
   /**
-   * Initiates login with phone number and PIN.
-   * Returns the processId needed for 2FA verification.
+   * Initiates login with stored credentials.
    */
-  public async login(
-    credentials: CredentialsInput,
-  ): Promise<{ processId: string }> {
+  private async login(): Promise<void> {
     this.ensureInitialized();
 
-    // Validate credentials
-    const validationResult = CredentialsSchema.safeParse(credentials);
-    if (!validationResult.success) {
-      throw new AuthenticationError(
-        `Invalid credentials: ${validationResult.error.message}`,
-      );
-    }
-
-    const { phoneNumber, pin } = validationResult.data;
+    const { phoneNumber, pin } = this.credentials;
 
     logger.api.info(`Initiating login for ${phoneNumber.substring(0, 6)}...`);
 
@@ -172,29 +196,18 @@ export class TradeRepublicApiService {
     this.authStatus = AuthStatus.AWAITING_2FA;
 
     logger.api.info('Login initiated, awaiting 2FA code');
-
-    return { processId: parsed.processId };
   }
 
   /**
    * Completes 2FA verification with the code received via SMS.
    */
-  public async verify2FA(input: TwoFactorCodeInput): Promise<void> {
+  private async verify2FA(code: string): Promise<void> {
     this.ensureInitialized();
 
+    /* istanbul ignore if -- @preserve Defensive guard: unreachable via public API (connect always calls login first) */
     if (this.authStatus !== AuthStatus.AWAITING_2FA) {
       throw new AuthenticationError('Not awaiting 2FA verification');
     }
-
-    // Validate code
-    const validationResult = TwoFactorCodeSchema.safeParse(input);
-    if (!validationResult.success) {
-      throw new AuthenticationError(
-        `Invalid 2FA code: ${validationResult.error.message}`,
-      );
-    }
-
-    const { code } = validationResult.data;
 
     logger.api.info('Verifying 2FA code');
 
@@ -255,9 +268,10 @@ export class TradeRepublicApiService {
    * Refreshes the session using cookies.
    * Per pytr: uses GET request with cookies, refreshes cookies from response.
    */
-  public async refreshSession(): Promise<void> {
+  private async refreshSession(): Promise<void> {
     this.ensureInitialized();
 
+    /* istanbul ignore if -- defensive guard, ensureValidSession guarantees auth */
     if (this.authStatus !== AuthStatus.AUTHENTICATED || !this.hasCookies()) {
       throw new AuthenticationError('Not authenticated');
     }
@@ -301,9 +315,10 @@ export class TradeRepublicApiService {
    * Ensures the session is valid, refreshing if needed.
    * Uses a mutex pattern to prevent concurrent refresh requests.
    */
-  public async ensureValidSession(): Promise<void> {
+  private async ensureValidSession(): Promise<void> {
     this.ensureInitialized();
 
+    /* istanbul ignore if -- @preserve Defensive guard: ensureInitialized guarantees auth via connect */
     if (this.authStatus !== AuthStatus.AUTHENTICATED || !this.hasCookies()) {
       throw new AuthenticationError('Not authenticated');
     }
@@ -354,6 +369,149 @@ export class TradeRepublicApiService {
    */
   public getAuthStatus(): AuthStatus {
     return this.authStatus;
+  }
+
+  /**
+   * Validates that the session is still valid, refreshing if needed.
+   * Useful for health checks or before batches of operations.
+   */
+  public async validateSession(): Promise<void> {
+    await this.ensureValidSession();
+  }
+
+  /**
+   * Subscribe to a WebSocket topic and wait for a response.
+   * This is the primary method for making API calls via WebSocket.
+   *
+   * @param topic - The WebSocket topic to subscribe to
+   * @param payload - Optional payload to send with the subscription
+   * @param schema - Zod schema to validate and transform the response
+   * @param timeoutMs - Optional timeout in milliseconds (default: 30 seconds)
+   * @returns Parsed and validated response data
+   */
+  public subscribeAndWait<T>(
+    topic: string,
+    payload: Record<string, unknown>,
+    schema: {
+      safeParse: (
+        data: unknown,
+      ) => { success: true; data: T } | { success: false; error: unknown };
+    },
+    timeoutMs: number = DEFAULT_SUBSCRIPTION_TIMEOUT_MS,
+  ): Promise<T> {
+    return new Promise((resolve, reject) => {
+      let subscriptionId: number | null = null;
+      let timeoutId: NodeJS.Timeout | null = null;
+      let resolved = false;
+
+      const cleanup = (): void => {
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+        this.offMessage(messageHandler);
+        this.offError(errorHandler);
+        if (subscriptionId !== null) {
+          try {
+            this.unsubscribe(subscriptionId);
+          } catch {
+            // Ignore unsubscribe errors during cleanup
+          }
+        }
+      };
+
+      const messageHandler = (message: WebSocketMessage): void => {
+        if (resolved || message.id !== subscriptionId) {
+          return;
+        }
+
+        if (message.code === MESSAGE_CODE.E) {
+          resolved = true;
+          cleanup();
+          const errorPayload = message.payload as
+            | { message?: string }
+            | undefined;
+          const errorMessage = errorPayload?.message || 'API error';
+          logger.api.error(
+            { payload: message.payload },
+            `${topic} subscription error`,
+          );
+          reject(new TradeRepublicError(errorMessage));
+          return;
+        }
+
+        if (message.code === MESSAGE_CODE.A) {
+          resolved = true;
+          cleanup();
+          const parseResult = schema.safeParse(message.payload);
+          if (parseResult.success) {
+            logger.api.debug({ topic }, 'Received subscription data');
+            resolve(parseResult.data);
+          } else {
+            logger.api.error(
+              { err: parseResult.error },
+              `Failed to parse ${topic} response`,
+            );
+            reject(new TradeRepublicError(`Invalid ${topic} response format`));
+          }
+        }
+      };
+
+      const errorHandler = (error: Error | WebSocketMessage): void => {
+        /* istanbul ignore if -- race condition guard */
+        if (resolved) {
+          return;
+        }
+        if (error instanceof Error) {
+          resolved = true;
+          cleanup();
+          reject(error);
+        } else if (error.id === subscriptionId) {
+          resolved = true;
+          cleanup();
+          const errorPayload = error.payload as
+            | { message?: string }
+            | undefined;
+          reject(
+            new TradeRepublicError(
+              /* istanbul ignore next -- fallback branch */
+              errorPayload?.message || String(error.payload),
+            ),
+          );
+        }
+      };
+
+      this.onMessage(messageHandler);
+      this.onError(errorHandler);
+
+      timeoutId = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          cleanup();
+          logger.api.error(
+            `${topic} subscription timed out after ${timeoutMs}ms`,
+          );
+          reject(new TradeRepublicError(`${topic} request timed out`));
+        }
+      }, timeoutMs);
+
+      try {
+        subscriptionId = this.subscribe({ topic, payload });
+        logger.api.debug(
+          { topic, subscriptionId, payload },
+          'Subscribed to topic',
+        );
+      } catch (error) {
+        resolved = true;
+        cleanup();
+        /* istanbul ignore else -- non-Error throws are unlikely */
+        if (error instanceof Error) {
+          reject(error);
+        } else {
+          reject(new TradeRepublicError(String(error)));
+        }
+      }
+    });
   }
 
   /**
