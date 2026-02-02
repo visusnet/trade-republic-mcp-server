@@ -160,10 +160,7 @@ describe('TradeRepublicApiService', () => {
     mockCrypto = createMockCryptoManager();
     mockWs = createMockWebSocketManager();
     mockFetch = createMockFetch();
-    // Use throttleInterval: 0 for fast tests (no rate limiting delay)
-    service = new TradeRepublicApiService(mockCrypto, mockWs, mockFetch, {
-      throttleInterval: 0,
-    });
+    service = new TradeRepublicApiService(mockCrypto, mockWs, mockFetch);
   });
 
   describe('initialize', () => {
@@ -302,6 +299,7 @@ describe('TradeRepublicApiService', () => {
 
   describe('verify2FA', () => {
     beforeEach(async () => {
+      jest.useFakeTimers();
       await service.initialize();
       const mockLoginResponse = {
         ok: true,
@@ -309,6 +307,11 @@ describe('TradeRepublicApiService', () => {
       };
       mockFetch.mockResolvedValue(mockLoginResponse as Response);
       await service.login(testCredentials);
+      await jest.advanceTimersByTimeAsync(1000); // wait for throttle
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
     });
 
     it('should complete 2FA and store cookies', async () => {
@@ -518,6 +521,7 @@ describe('TradeRepublicApiService', () => {
 
   describe('refreshSession', () => {
     beforeEach(async () => {
+      jest.useFakeTimers();
       await service.initialize();
       // Login
       const mockLoginResponse = {
@@ -526,12 +530,18 @@ describe('TradeRepublicApiService', () => {
       };
       mockFetch.mockResolvedValue(mockLoginResponse as Response);
       await service.login(testCredentials);
+      await jest.advanceTimersByTimeAsync(1000); // wait for throttle
       // 2FA with cookies
       const mock2FAResponse = createMock2FAResponse([
         'session=test-session-cookie; Domain=traderepublic.com; Path=/',
       ]);
       mockFetch.mockResolvedValue(mock2FAResponse as Response);
       await service.verify2FA(testTwoFactorCode);
+      await jest.advanceTimersByTimeAsync(1000); // wait for throttle
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
     });
 
     it('should refresh session using GET with cookies', async () => {
@@ -560,6 +570,7 @@ describe('TradeRepublicApiService', () => {
       mockFetch.mockResolvedValue(mockRefreshResponse as Response);
 
       await service.refreshSession();
+      await jest.advanceTimersByTimeAsync(1000); // wait for throttle
 
       // Clear mock and refresh again to verify new cookie is used
       mockFetch.mockClear();
@@ -641,6 +652,7 @@ describe('TradeRepublicApiService', () => {
 
   describe('ensureValidSession', () => {
     beforeEach(async () => {
+      jest.useFakeTimers();
       await service.initialize();
       const mockLoginResponse = {
         ok: true,
@@ -648,11 +660,17 @@ describe('TradeRepublicApiService', () => {
       };
       mockFetch.mockResolvedValue(mockLoginResponse as Response);
       await service.login(testCredentials);
+      await jest.advanceTimersByTimeAsync(1000); // wait for throttle
       const mock2FAResponse = createMock2FAResponse([
         'session=test-session-cookie; Domain=traderepublic.com; Path=/',
       ]);
       mockFetch.mockResolvedValue(mock2FAResponse as Response);
       await service.verify2FA(testTwoFactorCode);
+      await jest.advanceTimersByTimeAsync(1000); // wait for throttle
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
     });
 
     it('should refresh if session is about to expire', async () => {
@@ -700,6 +718,7 @@ describe('TradeRepublicApiService', () => {
 
   describe('unsubscribe', () => {
     beforeEach(async () => {
+      jest.useFakeTimers();
       await service.initialize();
       const mockLoginResponse = {
         ok: true,
@@ -707,11 +726,16 @@ describe('TradeRepublicApiService', () => {
       };
       mockFetch.mockResolvedValue(mockLoginResponse as Response);
       await service.login(testCredentials);
+      await jest.advanceTimersByTimeAsync(1000); // wait for throttle
       const mock2FAResponse = createMock2FAResponse([
         'session=test-session-cookie; Domain=traderepublic.com; Path=/',
       ]);
       mockFetch.mockResolvedValue(mock2FAResponse as Response);
       await service.verify2FA(testTwoFactorCode);
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
     });
 
     it('should unsubscribe from a topic', () => {
@@ -723,6 +747,7 @@ describe('TradeRepublicApiService', () => {
 
   describe('subscribe', () => {
     beforeEach(async () => {
+      jest.useFakeTimers();
       await service.initialize();
       const mockLoginResponse = {
         ok: true,
@@ -730,11 +755,16 @@ describe('TradeRepublicApiService', () => {
       };
       mockFetch.mockResolvedValue(mockLoginResponse as Response);
       await service.login(testCredentials);
+      await jest.advanceTimersByTimeAsync(1000); // wait for throttle
       const mock2FAResponse = createMock2FAResponse([
         'session=test-session-cookie; Domain=traderepublic.com; Path=/',
       ]);
       mockFetch.mockResolvedValue(mock2FAResponse as Response);
       await service.verify2FA(testTwoFactorCode);
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
     });
 
     it('should subscribe to a topic', () => {
@@ -769,6 +799,7 @@ describe('TradeRepublicApiService', () => {
 
   describe('disconnect', () => {
     it('should disconnect and clean up', async () => {
+      jest.useFakeTimers();
       await service.initialize();
       const mockLoginResponse = {
         ok: true,
@@ -776,6 +807,7 @@ describe('TradeRepublicApiService', () => {
       };
       mockFetch.mockResolvedValue(mockLoginResponse as Response);
       await service.login(testCredentials);
+      await jest.advanceTimersByTimeAsync(1000); // wait for throttle
       const mock2FAResponse = createMock2FAResponse([
         'session=test-session-cookie; Domain=traderepublic.com; Path=/',
       ]);
@@ -786,6 +818,7 @@ describe('TradeRepublicApiService', () => {
 
       expect(mockWs.disconnect).toHaveBeenCalled();
       expect(service.getAuthStatus()).toBe(AuthStatus.UNAUTHENTICATED);
+      jest.useRealTimers();
     });
   });
 
