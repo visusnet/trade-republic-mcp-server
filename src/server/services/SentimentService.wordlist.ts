@@ -49,6 +49,7 @@ export const FINANCE_SENTIMENT_WORDS: Record<string, number> = {
   // Mild negative signals (-1)
   put: -1,
   short: -1,
+  hedge: 0, // Neutral risk management (per ADR-012)
   underweight: -1,
   cautious: -1,
   volatile: -1,

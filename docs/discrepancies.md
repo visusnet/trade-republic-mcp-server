@@ -1591,7 +1591,9 @@ Features in trade-republic-api NOT in ours:
 
 ## Detailed Discrepancies
 
-### DISCREPANCY-001: ADR-012 Missing Sentiment Term "hedge"
+### DISCREPANCY-001: ADR-012 Missing Sentiment Term "hedge" [RESOLVED]
+
+**Status:** RESOLVED (2026-02-02) - Added `hedge: 0` to SentimentService.wordlist.ts
 
 **ADR Reference:** ADR-012: Finance-Specific Sentiment Analysis
 
