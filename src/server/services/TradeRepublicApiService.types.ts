@@ -134,6 +134,9 @@ export interface StoredCookie {
 /** Default session duration (290 seconds per pytr) */
 export const DEFAULT_SESSION_DURATION_MS = 290_000;
 
+/** HTTP request timeout in milliseconds (10 seconds, matches pytr) */
+export const HTTP_TIMEOUT_MS = 10_000;
+
 /** Parsed WebSocket message */
 export interface WebSocketMessage {
   /** Subscription ID */

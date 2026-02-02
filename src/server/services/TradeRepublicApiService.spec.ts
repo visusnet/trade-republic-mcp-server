@@ -12,6 +12,7 @@ import {
   AuthStatus,
   ConnectionStatus,
   type FetchFunction,
+  HTTP_TIMEOUT_MS,
   type KeyPair,
   type SignedPayload,
 } from './TradeRepublicApiService.types';
@@ -1504,6 +1505,78 @@ describe('TradeRepublicApiService', () => {
 
       await refreshPromise;
       expect(callCount).toBe(2);
+    });
+
+    it('should include AbortSignal.timeout in fetch requests', async () => {
+      await service.initialize();
+
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ processId: 'test-process-id' }),
+      } as Response);
+
+      await service.login(testCredentials);
+      await jest.advanceTimersByTimeAsync(1000);
+
+      // Verify the fetch was called with a signal option
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          signal: expect.any(AbortSignal),
+        }),
+      );
+    });
+
+    it('should retry when request times out', async () => {
+      await service.initialize();
+
+      let callCount = 0;
+      mockFetch.mockImplementation(() => {
+        callCount++;
+        // Simulate timeout on first call by throwing an abort error
+        if (callCount === 1) {
+          const error = new Error('The operation was aborted');
+          error.name = 'AbortError';
+          return Promise.reject(error);
+        }
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ processId: 'test-process-id' }),
+        } as Response);
+      });
+
+      const loginPromise = service.login(testCredentials);
+      await jest.advanceTimersByTimeAsync(20000);
+
+      const result = await loginPromise;
+      expect(result.processId).toBe('test-process-id');
+      expect(callCount).toBe(2); // First timeout, second success
+    });
+
+    it('should fail after all retry attempts timeout', async () => {
+      await service.initialize();
+
+      let callCount = 0;
+      mockFetch.mockImplementation(() => {
+        callCount++;
+        const error = new Error('The operation was aborted');
+        error.name = 'AbortError';
+        return Promise.reject(error);
+      });
+
+      const loginPromise = service
+        .login(testCredentials)
+        .catch((e: unknown) => e as Error);
+
+      await jest.advanceTimersByTimeAsync(30000);
+
+      const result = await loginPromise;
+      expect(result).toBeInstanceOf(Error);
+      expect(callCount).toBe(4); // Initial + 3 retries
+    });
+
+    it('should use HTTP_TIMEOUT_MS constant value of 10000ms', () => {
+      expect(HTTP_TIMEOUT_MS).toBe(10000);
     });
 
     it('should respect exponential backoff timing (1s, 2s, 4s delays)', async () => {

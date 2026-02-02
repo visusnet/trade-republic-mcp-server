@@ -26,6 +26,7 @@ import {
   AuthenticationError,
   AuthStatus,
   DEFAULT_SESSION_DURATION_MS,
+  HTTP_TIMEOUT_MS,
   TR_API_URL,
   TradeRepublicError,
   type FetchFunction,
@@ -424,7 +425,10 @@ export class TradeRepublicApiService {
     ): Promise<Response> => {
       return pRetry(
         async () => {
-          const response = await fetchFn(url, init);
+          const response = await fetchFn(url, {
+            ...init,
+            signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
+          });
 
           // Don't retry 4xx client errors (except 429 rate limit)
           if (

@@ -1884,7 +1884,9 @@ Added `refreshPromise` property. Concurrent callers await the same promise inste
 
 ---
 
-### DISCREPANCY-009: Missing HTTP Request Timeouts
+### DISCREPANCY-009: Missing HTTP Request Timeouts [RESOLVED]
+
+**Status:** RESOLVED (2026-02-02) - Added 10-second timeout using AbortSignal.timeout()
 
 **ADR Reference:** Best practice (implicit requirement)
 
@@ -1898,6 +1900,9 @@ WebSocket subscriptions have timeouts (30 seconds), but HTTP requests (login, 2F
 
 **Fix Required:**
 Add timeout configuration to all HTTP fetch calls.
+
+**Resolution:**
+Added `HTTP_TIMEOUT_MS = 10000` constant (matches pytr). Each fetch attempt in `createRetryFetch()` now includes `signal: AbortSignal.timeout(HTTP_TIMEOUT_MS)`. Timeout errors trigger retry with exponential backoff.
 
 **Verification Evidence:**
 - Agent: API/WebSocket Agent 2 (Completeness)
