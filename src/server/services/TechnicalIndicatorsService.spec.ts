@@ -1,78 +1,50 @@
-/* eslint-disable @typescript-eslint/no-non-null-assertion */
-/* eslint-disable jest/no-conditional-expect */
 import { describe, it, expect } from '@jest/globals';
 
 import { TechnicalIndicatorsService } from './TechnicalIndicatorsService';
 import type { Candle } from './TechnicalAnalysisService.types';
 
 /**
- * Generate sample candles for testing.
+ * Generate deterministic candles from close prices.
+ * Each candle has open=close, high=close+1, low=close-1.
  */
-function generateCandles(
-  count: number,
-  options?: { withVolume?: boolean },
-): Candle[] {
-  const candles: Candle[] = [];
-  let basePrice = 100;
-
-  for (let i = 0; i < count; i++) {
-    const variation = Math.sin(i * 0.5) * 5 + (Math.random() - 0.5) * 2;
-    const open = basePrice + variation;
-    const high = open + Math.random() * 3;
-    const low = open - Math.random() * 3;
-    const close = low + Math.random() * (high - low);
-
-    candles.push({
-      time: Date.now() - (count - i) * 86400000,
-      open,
-      high,
-      low,
-      close,
-      volume: options?.withVolume
-        ? Math.floor(Math.random() * 10000) + 1000
-        : undefined,
-    });
-
-    basePrice = close;
-  }
-
-  return candles;
+function generateCandles(closePrices: number[]): Candle[] {
+  return closePrices.map((close, i) => ({
+    time: Date.now() - (closePrices.length - i) * 86400000,
+    open: close,
+    high: close + 1,
+    low: close - 1,
+    close,
+  }));
 }
 
 /**
- * Generate trending candles for testing.
+ * Generate deterministic candles with volume from close prices.
  */
-function generateTrendingCandles(
-  count: number,
-  direction: 'up' | 'down',
-  options?: { withVolume?: boolean },
+function generateCandlesWithVolume(closePrices: number[]): Candle[] {
+  return closePrices.map((close, i) => ({
+    time: Date.now() - (closePrices.length - i) * 86400000,
+    open: close,
+    high: close + 1,
+    low: close - 1,
+    close,
+    volume: 1000 + i * 100,
+  }));
+}
+
+/**
+ * Generate deterministic candles with custom high/low/close/volume data.
+ */
+function generateCandlesWithHLC(
+  data: { high: number; low: number; close: number; volume?: number }[],
 ): Candle[] {
-  const candles: Candle[] = [];
-  let basePrice = direction === 'up' ? 100 : 200;
-  const trend = direction === 'up' ? 1 : -1;
-
-  for (let i = 0; i < count; i++) {
-    const open = basePrice;
-    const change = (Math.random() * 2 + 0.5) * trend;
-    const close = open + change;
-    const high = Math.max(open, close) + Math.random() * 0.5;
-    const low = Math.min(open, close) - Math.random() * 0.5;
-
-    candles.push({
-      time: Date.now() - (count - i) * 86400000,
-      open,
-      high,
-      low,
-      close,
-      volume: options?.withVolume
-        ? Math.floor(Math.random() * 10000) + 1000
-        : undefined,
-    });
-
-    basePrice = close;
-  }
-
-  return candles;
+  return data.map(({ high, low, close, volume }, i) => ({
+    time: Date.now() - (data.length - i) * 86400000,
+    open: close,
+    high,
+    low,
+    close,
+    volume,
+  }));
 }
 
 describe('TechnicalIndicatorsService', () => {
@@ -83,7 +55,9 @@ describe('TechnicalIndicatorsService', () => {
   // ==========================================================================
   describe('calculateRSI', () => {
     it('should return null for insufficient data (less than period + 1)', () => {
-      const candles = generateCandles(10); // Less than 14 + 1 = 15
+      // Only 10 candles, less than 14 + 1 = 15 required
+      const closePrices = Array.from({ length: 10 }, (_, i) => 100 + i);
+      const candles = generateCandles(closePrices);
       const result = service.calculateRSI(candles);
 
       expect(result.value).toBeNull();
@@ -91,29 +65,31 @@ describe('TechnicalIndicatorsService', () => {
     });
 
     it('should calculate RSI with default period of 14', () => {
-      const candles = generateCandles(30);
+      // Ascending prices - should produce high RSI
+      const closePrices = Array.from({ length: 30 }, (_, i) => 100 + i);
+      const candles = generateCandles(closePrices);
       const result = service.calculateRSI(candles);
 
       expect(result.period).toBe(14);
-      if (result.value !== null) {
-        expect(result.value).toBeGreaterThanOrEqual(0);
-        expect(result.value).toBeLessThanOrEqual(100);
-      }
+      expect(result.value).not.toBeNull();
+      expect(result.value).toBeGreaterThanOrEqual(0);
+      expect(result.value).toBeLessThanOrEqual(100);
     });
 
     it('should calculate RSI with custom period', () => {
-      const candles = generateCandles(30);
+      const closePrices = Array.from({ length: 30 }, (_, i) => 100 + i);
+      const candles = generateCandles(closePrices);
       const result = service.calculateRSI(candles, 7);
 
       expect(result.period).toBe(7);
-      if (result.value !== null) {
-        expect(result.value).toBeGreaterThanOrEqual(0);
-        expect(result.value).toBeLessThanOrEqual(100);
-      }
+      expect(result.value).not.toBeNull();
+      expect(result.value).toBeGreaterThanOrEqual(0);
+      expect(result.value).toBeLessThanOrEqual(100);
     });
 
     it('should return RSI in range 0-100', () => {
-      const candles = generateCandles(50);
+      const closePrices = Array.from({ length: 50 }, (_, i) => 100 + i);
+      const candles = generateCandles(closePrices);
       const result = service.calculateRSI(candles);
 
       expect(result.value).not.toBeNull();
@@ -122,19 +98,23 @@ describe('TechnicalIndicatorsService', () => {
     });
 
     it('should return high RSI for strong uptrend', () => {
-      const candles = generateTrendingCandles(30, 'up');
+      // Strong ascending prices
+      const closePrices = Array.from({ length: 30 }, (_, i) => 100 + i * 2);
+      const candles = generateCandles(closePrices);
       const result = service.calculateRSI(candles);
 
       expect(result.value).not.toBeNull();
-      expect(result.value!).toBeGreaterThan(50);
+      expect(result.value as number).toBeGreaterThan(50);
     });
 
     it('should return low RSI for strong downtrend', () => {
-      const candles = generateTrendingCandles(30, 'down');
+      // Strong descending prices
+      const closePrices = Array.from({ length: 30 }, (_, i) => 200 - i * 2);
+      const candles = generateCandles(closePrices);
       const result = service.calculateRSI(candles);
 
       expect(result.value).not.toBeNull();
-      expect(result.value!).toBeLessThan(50);
+      expect(result.value as number).toBeLessThan(50);
     });
 
     it('should return null for empty candles array', () => {
@@ -144,17 +124,18 @@ describe('TechnicalIndicatorsService', () => {
     });
 
     it('should return null for single candle', () => {
-      const candles = generateCandles(1);
+      const candles = generateCandles([100]);
       const result = service.calculateRSI(candles);
 
       expect(result.value).toBeNull();
     });
 
     it('should work with exactly minimum required candles', () => {
-      const candles = generateCandles(15); // Exactly period + 1
+      // Exactly period + 1 = 15 candles
+      const closePrices = Array.from({ length: 15 }, (_, i) => 100 + i);
+      const candles = generateCandles(closePrices);
       const result = service.calculateRSI(candles, 14);
 
-      // Should have at least one result
       expect(result.period).toBe(14);
     });
   });
@@ -164,7 +145,9 @@ describe('TechnicalIndicatorsService', () => {
   // ==========================================================================
   describe('calculateMACD', () => {
     it('should return null for insufficient data (less than slowPeriod + signalPeriod)', () => {
-      const candles = generateCandles(30); // Less than 26 + 9 = 35
+      // 30 candles, less than 26 + 9 = 35 required
+      const closePrices = Array.from({ length: 30 }, (_, i) => 100 + i);
+      const candles = generateCandles(closePrices);
       const result = service.calculateMACD(candles);
 
       expect(result.macd).toBeNull();
@@ -173,7 +156,8 @@ describe('TechnicalIndicatorsService', () => {
     });
 
     it('should calculate MACD with default periods (12, 26, 9)', () => {
-      const candles = generateCandles(50);
+      const closePrices = Array.from({ length: 50 }, (_, i) => 100 + i * 0.5);
+      const candles = generateCandles(closePrices);
       const result = service.calculateMACD(candles);
 
       expect(result.fastPeriod).toBe(12);
@@ -182,18 +166,19 @@ describe('TechnicalIndicatorsService', () => {
     });
 
     it('should return MACD, signal, and histogram values', () => {
-      const candles = generateCandles(50);
+      const closePrices = Array.from({ length: 50 }, (_, i) => 100 + i);
+      const candles = generateCandles(closePrices);
       const result = service.calculateMACD(candles);
 
-      if (result.macd !== null) {
-        expect(typeof result.macd).toBe('number');
-        expect(typeof result.signal).toBe('number');
-        expect(typeof result.histogram).toBe('number');
-      }
+      expect(result.macd).not.toBeNull();
+      expect(typeof result.macd).toBe('number');
+      expect(typeof result.signal).toBe('number');
+      expect(typeof result.histogram).toBe('number');
     });
 
     it('should calculate custom period MACD', () => {
-      const candles = generateCandles(50);
+      const closePrices = Array.from({ length: 50 }, (_, i) => 100 + i);
+      const candles = generateCandles(closePrices);
       const result = service.calculateMACD(candles, 8, 17, 9);
 
       expect(result.fastPeriod).toBe(8);
@@ -202,17 +187,17 @@ describe('TechnicalIndicatorsService', () => {
     });
 
     it('should return histogram value for trending market', () => {
-      const candles = generateTrendingCandles(50, 'up');
+      const closePrices = Array.from({ length: 50 }, (_, i) => 100 + i * 2);
+      const candles = generateCandles(closePrices);
       const result = service.calculateMACD(candles);
 
-      if (result.histogram !== null) {
-        // MACD histogram should be a number (sign depends on momentum)
-        expect(typeof result.histogram).toBe('number');
-      }
+      expect(result.histogram).not.toBeNull();
+      expect(typeof result.histogram).toBe('number');
     });
 
     it('should return all MACD components for valid data', () => {
-      const candles = generateTrendingCandles(50, 'down');
+      const closePrices = Array.from({ length: 50 }, (_, i) => 200 - i);
+      const candles = generateCandles(closePrices);
       const result = service.calculateMACD(candles);
 
       expect(result.macd).not.toBeNull();
@@ -234,7 +219,9 @@ describe('TechnicalIndicatorsService', () => {
   // ==========================================================================
   describe('calculateBollingerBands', () => {
     it('should return null for insufficient data (less than period + 1)', () => {
-      const candles = generateCandles(15); // Less than 20 + 1 = 21
+      // 15 candles, less than 20 + 1 = 21 required
+      const closePrices = Array.from({ length: 15 }, (_, i) => 100 + i);
+      const candles = generateCandles(closePrices);
       const result = service.calculateBollingerBands(candles);
 
       expect(result.upper).toBeNull();
@@ -243,7 +230,8 @@ describe('TechnicalIndicatorsService', () => {
     });
 
     it('should calculate Bollinger Bands with default period of 20 and stdDev of 2', () => {
-      const candles = generateCandles(30);
+      const closePrices = Array.from({ length: 30 }, (_, i) => 100 + i);
+      const candles = generateCandles(closePrices);
       const result = service.calculateBollingerBands(candles);
 
       expect(result.period).toBe(20);
@@ -251,65 +239,66 @@ describe('TechnicalIndicatorsService', () => {
     });
 
     it('should return upper > middle > lower', () => {
-      const candles = generateCandles(30);
+      const closePrices = Array.from({ length: 30 }, (_, i) => 100 + i);
+      const candles = generateCandles(closePrices);
       const result = service.calculateBollingerBands(candles);
 
-      if (
-        result.upper !== null &&
-        result.middle !== null &&
-        result.lower !== null
-      ) {
-        expect(result.upper).toBeGreaterThan(result.middle);
-        expect(result.middle).toBeGreaterThan(result.lower);
-      }
+      expect(result.upper).not.toBeNull();
+      expect(result.middle).not.toBeNull();
+      expect(result.lower).not.toBeNull();
+
+      const upper = result.upper as number;
+      const middle = result.middle as number;
+      const lower = result.lower as number;
+      expect(upper).toBeGreaterThan(middle);
+      expect(middle).toBeGreaterThan(lower);
     });
 
     it('should calculate pb (percent b) value', () => {
-      const candles = generateCandles(30);
+      const closePrices = Array.from({ length: 30 }, (_, i) => 100 + i);
+      const candles = generateCandles(closePrices);
       const result = service.calculateBollingerBands(candles);
 
-      if (result.pb !== null) {
-        expect(typeof result.pb).toBe('number');
-      }
+      expect(result.pb).not.toBeNull();
+      expect(typeof result.pb).toBe('number');
     });
 
     it('should calculate bandwidth value', () => {
-      const candles = generateCandles(30);
+      const closePrices = Array.from({ length: 30 }, (_, i) => 100 + i);
+      const candles = generateCandles(closePrices);
       const result = service.calculateBollingerBands(candles);
 
-      if (result.bandwidth !== null) {
-        expect(result.bandwidth).toBeGreaterThanOrEqual(0);
-      }
+      expect(result.bandwidth).not.toBeNull();
+      expect(result.bandwidth as number).toBeGreaterThanOrEqual(0);
     });
 
     it('should return pb < 0 when price below lower band', () => {
-      // Create candles that end with a sharp drop
-      const candles = generateCandles(30);
-      // Force last price to be very low
-      candles[candles.length - 1].close = candles[0].close * 0.7;
-      candles[candles.length - 1].low = candles[candles.length - 1].close;
+      // Create ascending candles, then force last price to be very low
+      const closePrices = Array.from({ length: 30 }, (_, i) => 100 + i);
+      const candles = generateCandles(closePrices);
+      candles[candles.length - 1].close = 50;
+      candles[candles.length - 1].low = 49;
 
       const result = service.calculateBollingerBands(candles);
 
-      // pb can be negative when price is below lower band
       expect(result.pb).not.toBeNull();
     });
 
     it('should return pb > 1 when price above upper band', () => {
-      // Create candles that end with a sharp rise
-      const candles = generateCandles(30);
-      // Force last price to be very high
-      candles[candles.length - 1].close = candles[0].close * 1.3;
-      candles[candles.length - 1].high = candles[candles.length - 1].close;
+      // Create ascending candles, then force last price to be very high
+      const closePrices = Array.from({ length: 30 }, (_, i) => 100 + i);
+      const candles = generateCandles(closePrices);
+      candles[candles.length - 1].close = 200;
+      candles[candles.length - 1].high = 201;
 
       const result = service.calculateBollingerBands(candles);
 
-      // pb can be > 1 when price is above upper band
       expect(result.pb).not.toBeNull();
     });
 
     it('should calculate with custom period and stdDev', () => {
-      const candles = generateCandles(30);
+      const closePrices = Array.from({ length: 30 }, (_, i) => 100 + i);
+      const candles = generateCandles(closePrices);
       const result = service.calculateBollingerBands(candles, 10, 1.5);
 
       expect(result.period).toBe(10);
@@ -330,31 +319,34 @@ describe('TechnicalIndicatorsService', () => {
   // ==========================================================================
   describe('calculateSMA', () => {
     it('should return null for insufficient data', () => {
-      const candles = generateCandles(10);
+      const closePrices = Array.from({ length: 10 }, (_, i) => 100 + i);
+      const candles = generateCandles(closePrices);
       const result = service.calculateSMA(candles, 20);
 
       expect(result.value).toBeNull();
     });
 
     it('should calculate SMA with default period of 20', () => {
-      const candles = generateCandles(30);
+      const closePrices = Array.from({ length: 30 }, (_, i) => 100 + i);
+      const candles = generateCandles(closePrices);
       const result = service.calculateSMA(candles);
 
       expect(result.period).toBe(20);
     });
 
     it('should return valid SMA value', () => {
-      const candles = generateCandles(30);
+      const closePrices = Array.from({ length: 30 }, (_, i) => 100 + i);
+      const candles = generateCandles(closePrices);
       const result = service.calculateSMA(candles);
 
-      if (result.value !== null) {
-        expect(typeof result.value).toBe('number');
-        expect(result.value).toBeGreaterThan(0);
-      }
+      expect(result.value).not.toBeNull();
+      expect(typeof result.value).toBe('number');
+      expect(result.value as number).toBeGreaterThan(0);
     });
 
     it('should calculate with custom period', () => {
-      const candles = generateCandles(30);
+      const closePrices = Array.from({ length: 30 }, (_, i) => 100 + i);
+      const candles = generateCandles(closePrices);
       const result = service.calculateSMA(candles, 10);
 
       expect(result.period).toBe(10);
@@ -373,31 +365,34 @@ describe('TechnicalIndicatorsService', () => {
   // ==========================================================================
   describe('calculateEMA', () => {
     it('should return null for insufficient data', () => {
-      const candles = generateCandles(10);
+      const closePrices = Array.from({ length: 10 }, (_, i) => 100 + i);
+      const candles = generateCandles(closePrices);
       const result = service.calculateEMA(candles, 20);
 
       expect(result.value).toBeNull();
     });
 
     it('should calculate EMA with default period of 20', () => {
-      const candles = generateCandles(30);
+      const closePrices = Array.from({ length: 30 }, (_, i) => 100 + i);
+      const candles = generateCandles(closePrices);
       const result = service.calculateEMA(candles);
 
       expect(result.period).toBe(20);
     });
 
     it('should return valid EMA value', () => {
-      const candles = generateCandles(30);
+      const closePrices = Array.from({ length: 30 }, (_, i) => 100 + i);
+      const candles = generateCandles(closePrices);
       const result = service.calculateEMA(candles);
 
-      if (result.value !== null) {
-        expect(typeof result.value).toBe('number');
-        expect(result.value).toBeGreaterThan(0);
-      }
+      expect(result.value).not.toBeNull();
+      expect(typeof result.value).toBe('number');
+      expect(result.value as number).toBeGreaterThan(0);
     });
 
     it('should calculate with custom period', () => {
-      const candles = generateCandles(30);
+      const closePrices = Array.from({ length: 30 }, (_, i) => 100 + i);
+      const candles = generateCandles(closePrices);
       const result = service.calculateEMA(candles, 10);
 
       expect(result.period).toBe(10);
@@ -405,20 +400,24 @@ describe('TechnicalIndicatorsService', () => {
     });
 
     it('should give more weight to recent prices than SMA', () => {
-      // Create candles with recent sharp uptrend
-      const candles = generateCandles(30);
-      // Make recent prices higher
-      for (let i = 25; i < 30; i++) {
-        candles[i].close = candles[i].close * 1.2;
-      }
+      // Create candles with stable prices, then spike at the end
+      const closePrices = [
+        ...Array.from({ length: 25 }, () => 100),
+        150,
+        155,
+        160,
+        165,
+        170,
+      ];
+      const candles = generateCandles(closePrices);
 
       const sma = service.calculateSMA(candles, 10);
       const ema = service.calculateEMA(candles, 10);
 
+      expect(sma.value).not.toBeNull();
+      expect(ema.value).not.toBeNull();
       // EMA should be higher due to more weight on recent higher prices
-      if (sma.value !== null && ema.value !== null) {
-        expect(ema.value).toBeGreaterThan(sma.value);
-      }
+      expect(ema.value as number).toBeGreaterThan(sma.value as number);
     });
 
     it('should return null for empty candles array', () => {
@@ -433,46 +432,67 @@ describe('TechnicalIndicatorsService', () => {
   // ==========================================================================
   describe('calculateADX', () => {
     it('should return null for insufficient data', () => {
-      const candles = generateCandles(20);
+      const data = Array.from({ length: 20 }, (_, i) => ({
+        high: 105 + i,
+        low: 95 + i,
+        close: 100 + i,
+      }));
+      const candles = generateCandlesWithHLC(data);
       const result = service.calculateADX(candles);
 
       expect(result.adx).toBeNull();
     });
 
     it('should calculate ADX with default period of 14', () => {
-      const candles = generateCandles(50);
+      const data = Array.from({ length: 50 }, (_, i) => ({
+        high: 105 + i,
+        low: 95 + i,
+        close: 100 + i,
+      }));
+      const candles = generateCandlesWithHLC(data);
       const result = service.calculateADX(candles);
 
       expect(result.period).toBe(14);
     });
 
     it('should return ADX, +DI, and -DI values', () => {
-      const candles = generateCandles(50);
+      const data = Array.from({ length: 50 }, (_, i) => ({
+        high: 105 + i,
+        low: 95 + i,
+        close: 100 + i,
+      }));
+      const candles = generateCandlesWithHLC(data);
       const result = service.calculateADX(candles);
 
-      if (result.adx !== null) {
-        expect(result.adx).toBeGreaterThanOrEqual(0);
-        expect(result.adx).toBeLessThanOrEqual(100);
-        expect(result.plusDI).not.toBeNull();
-        expect(result.minusDI).not.toBeNull();
-      }
+      expect(result.adx).not.toBeNull();
+      expect(result.adx as number).toBeGreaterThanOrEqual(0);
+      expect(result.adx as number).toBeLessThanOrEqual(100);
+      expect(result.plusDI).not.toBeNull();
+      expect(result.minusDI).not.toBeNull();
     });
 
     it('should return higher ADX for trending market', () => {
-      const trendingCandles = generateTrendingCandles(50, 'up');
-      const sidewaysCandles = generateCandles(50);
-
+      // Strong consistent uptrend
+      const trendingData = Array.from({ length: 50 }, (_, i) => ({
+        high: 100 + i * 3,
+        low: 95 + i * 3,
+        close: 98 + i * 3,
+      }));
+      const trendingCandles = generateCandlesWithHLC(trendingData);
       const trendResult = service.calculateADX(trendingCandles);
-      const sidewaysResult = service.calculateADX(sidewaysCandles);
 
-      // Trending market should have higher ADX
-      if (trendResult.adx !== null && sidewaysResult.adx !== null) {
-        expect(trendResult.adx).toBeGreaterThan(20);
-      }
+      expect(trendResult.adx).not.toBeNull();
+      // Trending market should have higher ADX (typically > 20)
+      expect(trendResult.adx as number).toBeGreaterThan(20);
     });
 
     it('should calculate with custom period', () => {
-      const candles = generateCandles(50);
+      const data = Array.from({ length: 50 }, (_, i) => ({
+        high: 105 + i,
+        low: 95 + i,
+        close: 100 + i,
+      }));
+      const candles = generateCandlesWithHLC(data);
       const result = service.calculateADX(candles, 10);
 
       expect(result.period).toBe(10);
@@ -490,7 +510,12 @@ describe('TechnicalIndicatorsService', () => {
   // ==========================================================================
   describe('calculateStochastic', () => {
     it('should return null for insufficient data', () => {
-      const candles = generateCandles(10);
+      const data = Array.from({ length: 10 }, (_, i) => ({
+        high: 105 + i,
+        low: 95 + i,
+        close: 100 + i,
+      }));
+      const candles = generateCandlesWithHLC(data);
       const result = service.calculateStochastic(candles);
 
       expect(result.k).toBeNull();
@@ -498,7 +523,12 @@ describe('TechnicalIndicatorsService', () => {
     });
 
     it('should calculate Stochastic with default periods (14, 3)', () => {
-      const candles = generateCandles(30);
+      const data = Array.from({ length: 30 }, (_, i) => ({
+        high: 105 + i,
+        low: 95 + i,
+        close: 100 + i,
+      }));
+      const candles = generateCandlesWithHLC(data);
       const result = service.calculateStochastic(candles);
 
       expect(result.period).toBe(14);
@@ -506,37 +536,59 @@ describe('TechnicalIndicatorsService', () => {
     });
 
     it('should return %K and %D in range 0-100', () => {
-      const candles = generateCandles(30);
+      const data = Array.from({ length: 30 }, (_, i) => ({
+        high: 105 + i,
+        low: 95 + i,
+        close: 100 + i,
+      }));
+      const candles = generateCandlesWithHLC(data);
       const result = service.calculateStochastic(candles);
 
-      if (result.k !== null && result.d !== null) {
-        expect(result.k).toBeGreaterThanOrEqual(0);
-        expect(result.k).toBeLessThanOrEqual(100);
-        expect(result.d).toBeGreaterThanOrEqual(0);
-        expect(result.d).toBeLessThanOrEqual(100);
-      }
+      expect(result.k).not.toBeNull();
+      expect(result.d).not.toBeNull();
+      const k = result.k as number;
+      const d = result.d as number;
+      expect(k).toBeGreaterThanOrEqual(0);
+      expect(k).toBeLessThanOrEqual(100);
+      expect(d).toBeGreaterThanOrEqual(0);
+      expect(d).toBeLessThanOrEqual(100);
     });
 
     it('should return high values for uptrend', () => {
-      const candles = generateTrendingCandles(30, 'up');
+      // Prices closing near the high of the range
+      const data = Array.from({ length: 30 }, (_, i) => ({
+        high: 110 + i,
+        low: 90 + i,
+        close: 108 + i,
+      }));
+      const candles = generateCandlesWithHLC(data);
       const result = service.calculateStochastic(candles);
 
-      if (result.k !== null) {
-        expect(result.k).toBeGreaterThan(50);
-      }
+      expect(result.k).not.toBeNull();
+      expect(result.k as number).toBeGreaterThan(50);
     });
 
     it('should return low values for downtrend', () => {
-      const candles = generateTrendingCandles(30, 'down');
+      // Prices closing near the low of the range
+      const data = Array.from({ length: 30 }, (_, i) => ({
+        high: 110 - i,
+        low: 90 - i,
+        close: 92 - i,
+      }));
+      const candles = generateCandlesWithHLC(data);
       const result = service.calculateStochastic(candles);
 
-      if (result.k !== null) {
-        expect(result.k).toBeLessThan(50);
-      }
+      expect(result.k).not.toBeNull();
+      expect(result.k as number).toBeLessThan(50);
     });
 
     it('should calculate with custom periods', () => {
-      const candles = generateCandles(30);
+      const data = Array.from({ length: 30 }, (_, i) => ({
+        high: 105 + i,
+        low: 95 + i,
+        close: 100 + i,
+      }));
+      const candles = generateCandlesWithHLC(data);
       const result = service.calculateStochastic(candles, 10, 5);
 
       expect(result.period).toBe(10);
@@ -556,48 +608,76 @@ describe('TechnicalIndicatorsService', () => {
   // ==========================================================================
   describe('calculateATR', () => {
     it('should return null for insufficient data', () => {
-      const candles = generateCandles(10);
+      const data = Array.from({ length: 10 }, (_, i) => ({
+        high: 105 + i,
+        low: 95 + i,
+        close: 100 + i,
+      }));
+      const candles = generateCandlesWithHLC(data);
       const result = service.calculateATR(candles);
 
       expect(result.value).toBeNull();
     });
 
     it('should calculate ATR with default period of 14', () => {
-      const candles = generateCandles(30);
+      const data = Array.from({ length: 30 }, (_, i) => ({
+        high: 105 + i,
+        low: 95 + i,
+        close: 100 + i,
+      }));
+      const candles = generateCandlesWithHLC(data);
       const result = service.calculateATR(candles);
 
       expect(result.period).toBe(14);
     });
 
     it('should return positive ATR value', () => {
-      const candles = generateCandles(30);
+      const data = Array.from({ length: 30 }, (_, i) => ({
+        high: 105 + i,
+        low: 95 + i,
+        close: 100 + i,
+      }));
+      const candles = generateCandlesWithHLC(data);
       const result = service.calculateATR(candles);
 
-      if (result.value !== null) {
-        expect(result.value).toBeGreaterThan(0);
-      }
+      expect(result.value).not.toBeNull();
+      expect(result.value as number).toBeGreaterThan(0);
     });
 
     it('should return higher ATR for volatile market', () => {
-      // Create volatile candles
-      const volatileCandles = generateCandles(30);
-      for (const candle of volatileCandles) {
-        candle.high = candle.close * 1.1;
-        candle.low = candle.close * 0.9;
-      }
+      // Low volatility data (tight range)
+      const lowVolData = Array.from({ length: 30 }, (_, i) => ({
+        high: 101 + i,
+        low: 99 + i,
+        close: 100 + i,
+      }));
+      const lowVolCandles = generateCandlesWithHLC(lowVolData);
 
-      const normalCandles = generateCandles(30);
+      // High volatility data (wide range)
+      const highVolData = Array.from({ length: 30 }, (_, i) => ({
+        high: 120 + i,
+        low: 80 + i,
+        close: 100 + i,
+      }));
+      const highVolCandles = generateCandlesWithHLC(highVolData);
 
-      const volatileResult = service.calculateATR(volatileCandles);
-      const normalResult = service.calculateATR(normalCandles);
+      const lowVolResult = service.calculateATR(lowVolCandles);
+      const highVolResult = service.calculateATR(highVolCandles);
 
-      if (volatileResult.value !== null && normalResult.value !== null) {
-        expect(volatileResult.value).toBeGreaterThan(normalResult.value);
-      }
+      expect(lowVolResult.value).not.toBeNull();
+      expect(highVolResult.value).not.toBeNull();
+      expect(highVolResult.value as number).toBeGreaterThan(
+        lowVolResult.value as number,
+      );
     });
 
     it('should calculate with custom period', () => {
-      const candles = generateCandles(30);
+      const data = Array.from({ length: 30 }, (_, i) => ({
+        high: 105 + i,
+        low: 95 + i,
+        close: 100 + i,
+      }));
+      const candles = generateCandlesWithHLC(data);
       const result = service.calculateATR(candles, 10);
 
       expect(result.period).toBe(10);
@@ -615,14 +695,16 @@ describe('TechnicalIndicatorsService', () => {
   // ==========================================================================
   describe('calculateOBV', () => {
     it('should return null when volume is not available', () => {
-      const candles = generateCandles(30, { withVolume: false });
+      const closePrices = Array.from({ length: 30 }, (_, i) => 100 + i);
+      const candles = generateCandles(closePrices); // No volume
       const result = service.calculateOBV(candles);
 
       expect(result.value).toBeNull();
     });
 
     it('should calculate OBV when volume is available', () => {
-      const candles = generateCandles(30, { withVolume: true });
+      const closePrices = Array.from({ length: 30 }, (_, i) => 100 + i);
+      const candles = generateCandlesWithVolume(closePrices);
       const result = service.calculateOBV(candles);
 
       expect(result.value).not.toBeNull();
@@ -630,13 +712,12 @@ describe('TechnicalIndicatorsService', () => {
     });
 
     it('should return positive OBV for uptrend with volume', () => {
-      const candles = generateTrendingCandles(30, 'up', { withVolume: true });
+      const closePrices = Array.from({ length: 30 }, (_, i) => 100 + i);
+      const candles = generateCandlesWithVolume(closePrices);
       const result = service.calculateOBV(candles);
 
-      // OBV should be positive in an uptrend
-      if (result.value !== null) {
-        expect(typeof result.value).toBe('number');
-      }
+      expect(result.value).not.toBeNull();
+      expect(typeof result.value).toBe('number');
     });
 
     it('should return null for empty candles array', () => {
@@ -646,14 +727,15 @@ describe('TechnicalIndicatorsService', () => {
     });
 
     it('should return null for single candle', () => {
-      const candles = generateCandles(1, { withVolume: true });
+      const candles = generateCandlesWithVolume([100]);
       const result = service.calculateOBV(candles);
 
       expect(result.value).toBeNull();
     });
 
     it('should handle candles where some have undefined volume', () => {
-      const candles = generateCandles(30, { withVolume: true });
+      const closePrices = Array.from({ length: 30 }, (_, i) => 100 + i);
+      const candles = generateCandlesWithVolume(closePrices);
       // Set some volumes to undefined
       candles[5].volume = undefined;
       candles[10].volume = undefined;
@@ -670,14 +752,16 @@ describe('TechnicalIndicatorsService', () => {
   // ==========================================================================
   describe('calculateVWAP', () => {
     it('should return null when volume is not available', () => {
-      const candles = generateCandles(30, { withVolume: false });
+      const closePrices = Array.from({ length: 30 }, (_, i) => 100 + i);
+      const candles = generateCandles(closePrices); // No volume
       const result = service.calculateVWAP(candles);
 
       expect(result.value).toBeNull();
     });
 
     it('should calculate VWAP when volume is available', () => {
-      const candles = generateCandles(30, { withVolume: true });
+      const closePrices = Array.from({ length: 30 }, (_, i) => 100 + i);
+      const candles = generateCandlesWithVolume(closePrices);
       const result = service.calculateVWAP(candles);
 
       expect(result.value).not.toBeNull();
@@ -685,12 +769,12 @@ describe('TechnicalIndicatorsService', () => {
     });
 
     it('should return positive VWAP value', () => {
-      const candles = generateCandles(30, { withVolume: true });
+      const closePrices = Array.from({ length: 30 }, (_, i) => 100 + i);
+      const candles = generateCandlesWithVolume(closePrices);
       const result = service.calculateVWAP(candles);
 
-      if (result.value !== null) {
-        expect(result.value).toBeGreaterThan(0);
-      }
+      expect(result.value).not.toBeNull();
+      expect(result.value as number).toBeGreaterThan(0);
     });
 
     it('should return null for empty candles array', () => {
@@ -700,14 +784,15 @@ describe('TechnicalIndicatorsService', () => {
     });
 
     it('should return null for single candle', () => {
-      const candles = generateCandles(1, { withVolume: true });
+      const candles = generateCandlesWithVolume([100]);
       const result = service.calculateVWAP(candles);
 
       expect(result.value).toBeNull();
     });
 
     it('should handle candles where some have undefined volume', () => {
-      const candles = generateCandles(30, { withVolume: true });
+      const closePrices = Array.from({ length: 30 }, (_, i) => 100 + i);
+      const candles = generateCandlesWithVolume(closePrices);
       // Set some volumes to undefined
       candles[5].volume = undefined;
       candles[10].volume = undefined;
