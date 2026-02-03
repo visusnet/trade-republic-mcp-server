@@ -17,12 +17,11 @@ const mockQuoteSummary =
     ) => Promise<YahooQuoteSummaryResult>
   >();
 
-// Mock yahoo-finance2 module
+// Mock yahoo-finance2 module - mock as a class constructor
 jest.mock('yahoo-finance2', () => ({
   __esModule: true,
-  default: {
-    quoteSummary: (symbol: string, options: { modules: string[] }) =>
-      mockQuoteSummary(symbol, options),
+  default: class MockYahooFinance {
+    quoteSummary = mockQuoteSummary;
   },
 }));
 

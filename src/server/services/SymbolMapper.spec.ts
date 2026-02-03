@@ -8,11 +8,19 @@ jest.mock('../../logger', () => ({
 }));
 
 const mockSearch =
-  jest.fn<() => Promise<{ quotes: Array<{ symbol?: string }> }>>();
+  jest.fn<
+    (
+      query: string,
+    ) => Promise<{
+      quotes: Array<{ symbol?: string; isYahooFinance?: boolean }>;
+    }>
+  >();
+
+// Mock yahoo-finance2 module - mock as a class constructor
 jest.mock('yahoo-finance2', () => ({
   __esModule: true,
-  default: {
-    search: mockSearch,
+  default: class MockYahooFinance {
+    search = mockSearch;
   },
 }));
 
@@ -61,7 +69,7 @@ describe('SymbolMapper', () => {
   describe('isinToSymbol', () => {
     it('should map valid ISIN to Yahoo symbol', async () => {
       mockSearch.mockResolvedValue({
-        quotes: [{ symbol: 'AAPL' }],
+        quotes: [{ symbol: 'AAPL', isYahooFinance: true }],
       });
 
       const symbol = await mapper.isinToSymbol('US0378331005');
@@ -70,7 +78,7 @@ describe('SymbolMapper', () => {
 
     it('should call Yahoo Finance search with ISIN', async () => {
       mockSearch.mockResolvedValue({
-        quotes: [{ symbol: 'AAPL' }],
+        quotes: [{ symbol: 'AAPL', isYahooFinance: true }],
       });
 
       await mapper.isinToSymbol('US0378331005');
@@ -101,7 +109,7 @@ describe('SymbolMapper', () => {
 
     it('should use cache on second call', async () => {
       mockSearch.mockResolvedValue({
-        quotes: [{ symbol: 'AAPL' }],
+        quotes: [{ symbol: 'AAPL', isYahooFinance: true }],
       });
 
       await mapper.isinToSymbol('US0378331005');
@@ -112,7 +120,7 @@ describe('SymbolMapper', () => {
 
     it('should return cached symbol on second call', async () => {
       mockSearch.mockResolvedValue({
-        quotes: [{ symbol: 'AAPL' }],
+        quotes: [{ symbol: 'AAPL', isYahooFinance: true }],
       });
 
       const first = await mapper.isinToSymbol('US0378331005');
@@ -155,7 +163,7 @@ describe('SymbolMapper', () => {
   describe('clearCache', () => {
     it('should clear the cache', async () => {
       mockSearch.mockResolvedValue({
-        quotes: [{ symbol: 'AAPL' }],
+        quotes: [{ symbol: 'AAPL', isYahooFinance: true }],
       });
 
       await mapper.isinToSymbol('US0378331005');

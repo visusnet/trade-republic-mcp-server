@@ -12,7 +12,7 @@ interface YahooNewsItem {
   title: string;
   publisher: string;
   link: string;
-  providerPublishTime: number;
+  providerPublishTime: Date;
   thumbnail?: { resolutions: Array<{ url: string }> };
 }
 
@@ -28,16 +28,13 @@ const mockSearch =
     ) => Promise<YahooSearchResult>
   >();
 
-jest.mock('yahoo-finance2', () => {
-  const mockYahooFinance = {
-    search: (query: string, options: { newsCount: number }) =>
-      mockSearch(query, options),
-  };
-  return {
-    __esModule: true,
-    default: mockYahooFinance,
-  };
-});
+// Mock yahoo-finance2 module - mock as a class constructor
+jest.mock('yahoo-finance2', () => ({
+  __esModule: true,
+  default: class MockYahooFinance {
+    search = mockSearch;
+  },
+}));
 
 import { NewsService } from './NewsService';
 import { NewsServiceError } from './NewsService.types';
@@ -73,7 +70,7 @@ describe('NewsService', () => {
             title: 'Apple announces new product',
             publisher: 'Reuters',
             link: 'https://example.com/news/1',
-            providerPublishTime: 1705312800,
+            providerPublishTime: new Date('2024-01-15T10:00:00Z'),
             thumbnail: {
               resolutions: [{ url: 'https://example.com/thumb.jpg' }],
             },
@@ -145,7 +142,7 @@ describe('NewsService', () => {
             title: 'Apple news',
             publisher: 'Reuters',
             link: 'https://example.com/news/1',
-            providerPublishTime: 1705312800,
+            providerPublishTime: new Date('2024-01-15T10:00:00Z'),
           },
         ],
       });
@@ -163,7 +160,7 @@ describe('NewsService', () => {
             title: 'Apple news',
             publisher: 'Reuters',
             link: 'https://example.com/news/1',
-            providerPublishTime: 1705312800,
+            providerPublishTime: new Date('2024-01-15T10:00:00Z'),
             thumbnail: { resolutions: [] },
           },
         ],
@@ -182,7 +179,7 @@ describe('NewsService', () => {
             title: 'Apple news',
             publisher: 'Reuters',
             link: 'https://example.com/news/1',
-            providerPublishTime: 1705312800,
+            providerPublishTime: new Date('2024-01-15T10:00:00Z'),
           },
         ],
       });
@@ -243,13 +240,13 @@ describe('NewsService', () => {
             title: 'News 1',
             publisher: 'Publisher',
             link: 'https://example.com/1',
-            providerPublishTime: 1705312800,
+            providerPublishTime: new Date('2024-01-15T10:00:00Z'),
           },
           {
             title: 'News 2',
             publisher: 'Publisher',
             link: 'https://example.com/2',
-            providerPublishTime: 1705312801,
+            providerPublishTime: new Date('2024-01-15T10:00:01Z'),
           },
         ],
       });

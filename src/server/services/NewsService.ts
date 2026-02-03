@@ -4,7 +4,8 @@
  * Fetches news articles for instruments using Yahoo Finance.
  */
 
-import yahooFinance from 'yahoo-finance2';
+import YahooFinance from 'yahoo-finance2';
+import type { SearchResult, SearchNews } from 'yahoo-finance2/modules/search';
 
 import { logger } from '../../logger';
 import type { SymbolMapper } from './SymbolMapper';
@@ -17,24 +18,6 @@ import {
 import { NewsServiceError } from './NewsService.types';
 
 const DEFAULT_NEWS_LIMIT = 10;
-
-/**
- * Yahoo Finance news item structure.
- */
-interface YahooNewsItem {
-  title: string;
-  publisher: string;
-  link: string;
-  providerPublishTime: number;
-  thumbnail?: { resolutions: Array<{ url: string }> };
-}
-
-/**
- * Yahoo Finance search result structure (subset for news).
- */
-interface YahooSearchResult {
-  news: YahooNewsItem[];
-}
 
 /**
  * Service for fetching news articles.
@@ -58,29 +41,25 @@ export class NewsService {
     logger.api.info({ isin: request.isin, limit }, 'Fetching news');
 
     let symbol: string;
-    let newsData: YahooSearchResult;
+    let newsData: SearchResult;
 
     try {
       symbol = await this.symbolMapper.isinToSymbol(request.isin);
-      /* eslint-disable @typescript-eslint/no-deprecated, @typescript-eslint/await-thenable */
-      newsData = (await yahooFinance.search(symbol, {
+      newsData = await new YahooFinance().search(symbol, {
         newsCount: limit,
-      })) as YahooSearchResult;
-      /* eslint-enable @typescript-eslint/no-deprecated, @typescript-eslint/await-thenable */
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw new NewsServiceError(`Failed to get news: ${message}`);
     }
 
-    const articles: NewsArticle[] = newsData.news.map(
-      (item: YahooNewsItem) => ({
-        title: item.title,
-        publisher: item.publisher,
-        link: item.link,
-        publishedAt: new Date(item.providerPublishTime * 1000).toISOString(),
-        thumbnail: item.thumbnail?.resolutions[0]?.url,
-      }),
-    );
+    const articles: NewsArticle[] = newsData.news.map((item: SearchNews) => ({
+      title: item.title,
+      publisher: item.publisher,
+      link: item.link,
+      publishedAt: item.providerPublishTime.toISOString(),
+      thumbnail: item.thumbnail?.resolutions[0]?.url,
+    }));
 
     logger.api.debug(
       { isin: request.isin, symbol, count: articles.length },

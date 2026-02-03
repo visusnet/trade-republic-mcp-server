@@ -4,7 +4,7 @@
  * Fetches fundamental data for instruments using Yahoo Finance.
  */
 
-import yahooFinance from 'yahoo-finance2';
+import YahooFinance from 'yahoo-finance2';
 
 import { logger } from '../../logger';
 import type { SymbolMapper } from './SymbolMapper';
@@ -74,11 +74,9 @@ export class FundamentalsService {
       symbol = await this.symbolMapper.isinToSymbol(request.isin);
 
       const yahooModules = this.getYahooModules(modules);
-      /* eslint-disable @typescript-eslint/no-deprecated, @typescript-eslint/await-thenable */
-      data = (await yahooFinance.quoteSummary(symbol, {
+      data = (await new YahooFinance().quoteSummary(symbol, {
         modules: yahooModules,
       })) as YahooQuoteSummaryResult;
-      /* eslint-enable @typescript-eslint/no-deprecated, @typescript-eslint/await-thenable */
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw new FundamentalsServiceError(

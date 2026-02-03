@@ -5,7 +5,8 @@
  */
 
 import { z } from 'zod';
-import yahooFinance from 'yahoo-finance2';
+import YahooFinance from 'yahoo-finance2';
+import type { SearchResult } from 'yahoo-finance2/modules/search';
 
 import { logger } from '../../logger';
 
@@ -51,17 +52,17 @@ export class SymbolMapper {
 
     logger.api.info({ isin }, 'Searching Yahoo Finance for symbol');
 
-    let result: { quotes: Array<{ symbol?: string }> };
+    let result: SearchResult;
     try {
-      // eslint-disable-next-line @typescript-eslint/no-deprecated, @typescript-eslint/await-thenable
-      result = await yahooFinance.search(isin);
+      result = await new YahooFinance().search(isin);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw new SymbolMapperError(`Failed to search for symbol: ${message}`);
     }
 
-    const quote = result.quotes.find((q) => q.symbol !== undefined);
-    if (!quote?.symbol) {
+    // Find a Yahoo Finance quote (has symbol property, isYahooFinance: true)
+    const quote = result.quotes.find((q) => 'symbol' in q && q.isYahooFinance);
+    if (!quote || !('symbol' in quote)) {
       throw new SymbolMapperError(`No Yahoo symbol found for ISIN: ${isin}`);
     }
 

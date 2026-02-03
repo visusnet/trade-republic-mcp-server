@@ -1,12 +1,10 @@
 /**
  * Technical Analysis Service - Internal Types
  *
- * These schemas are used only for type derivation (via z.output<typeof Schema>).
- * They are not exported because they are not used for runtime validation.
+ * These interfaces define the internal result types used by the service.
+ * They are not used for runtime validation since they represent internal
+ * calculation results, not external API boundaries.
  */
-/* eslint-disable @typescript-eslint/no-unused-vars */
-
-import { z } from 'zod';
 
 /**
  * Custom error class for technical analysis operations.
@@ -19,187 +17,131 @@ export class TechnicalAnalysisError extends Error {
 }
 
 /**
- * OHLCV candle data schema.
+ * OHLCV candle data.
  */
-const CandleSchema = z.object({
-  time: z.number().describe('Unix timestamp in milliseconds'),
-  open: z.number().describe('Opening price'),
-  high: z.number().describe('Highest price'),
-  low: z.number().describe('Lowest price'),
-  close: z.number().describe('Closing price'),
-  volume: z.number().optional().describe('Trading volume'),
-});
-type Candle = z.output<typeof CandleSchema>;
+export interface Candle {
+  /** Unix timestamp in milliseconds */
+  time: number;
+  /** Opening price */
+  open: number;
+  /** Highest price */
+  high: number;
+  /** Lowest price */
+  low: number;
+  /** Closing price */
+  close: number;
+  /** Trading volume */
+  volume?: number;
+}
 
 /**
- * RSI indicator result schema.
+ * RSI indicator result.
  */
-const RSIResultSchema = z.object({
-  value: z
-    .number()
-    .nullable()
-    .describe('RSI value (0-100) or null if insufficient data'),
-  period: z.number().describe('RSI calculation period'),
-});
-type RSIResult = z.output<typeof RSIResultSchema>;
+export interface RSIResult {
+  /** RSI value (0-100) or null if insufficient data */
+  value: number | null;
+  /** RSI calculation period */
+  period: number;
+}
 
 /**
- * MACD indicator result schema.
+ * MACD indicator result.
  */
-const MACDResultSchema = z.object({
-  macd: z
-    .number()
-    .nullable()
-    .describe('MACD line value or null if insufficient data'),
-  signal: z
-    .number()
-    .nullable()
-    .describe('Signal line value or null if insufficient data'),
-  histogram: z
-    .number()
-    .nullable()
-    .describe('MACD histogram value or null if insufficient data'),
-  fastPeriod: z.number().describe('Fast EMA period'),
-  slowPeriod: z.number().describe('Slow EMA period'),
-  signalPeriod: z.number().describe('Signal line period'),
-});
-type MACDResult = z.output<typeof MACDResultSchema>;
+export interface MACDResult {
+  /** MACD line value or null if insufficient data */
+  macd: number | null;
+  /** Signal line value or null if insufficient data */
+  signal: number | null;
+  /** MACD histogram value or null if insufficient data */
+  histogram: number | null;
+  /** Fast EMA period */
+  fastPeriod: number;
+  /** Slow EMA period */
+  slowPeriod: number;
+  /** Signal line period */
+  signalPeriod: number;
+}
 
 /**
- * Bollinger Bands indicator result schema.
+ * Bollinger Bands indicator result.
  */
-const BollingerBandsResultSchema = z.object({
-  upper: z
-    .number()
-    .nullable()
-    .describe('Upper band value or null if insufficient data'),
-  middle: z
-    .number()
-    .nullable()
-    .describe('Middle band (SMA) value or null if insufficient data'),
-  lower: z
-    .number()
-    .nullable()
-    .describe('Lower band value or null if insufficient data'),
-  pb: z
-    .number()
-    .nullable()
-    .describe(
-      'Percent B value (position within bands) or null if insufficient data',
-    ),
-  bandwidth: z
-    .number()
-    .nullable()
-    .describe(
-      'Bandwidth as percentage of middle band or null if insufficient data',
-    ),
-  period: z.number().describe('Bollinger Bands calculation period'),
-  stdDev: z.number().describe('Standard deviation multiplier'),
-});
-type BollingerBandsResult = z.output<typeof BollingerBandsResultSchema>;
+export interface BollingerBandsResult {
+  /** Upper band value or null if insufficient data */
+  upper: number | null;
+  /** Middle band (SMA) value or null if insufficient data */
+  middle: number | null;
+  /** Lower band value or null if insufficient data */
+  lower: number | null;
+  /** Percent B value (position within bands) or null if insufficient data */
+  pb: number | null;
+  /** Bandwidth as percentage of middle band or null if insufficient data */
+  bandwidth: number | null;
+  /** Bollinger Bands calculation period */
+  period: number;
+  /** Standard deviation multiplier */
+  stdDev: number;
+}
 
 /**
- * SMA/EMA indicator result schema.
+ * SMA/EMA indicator result.
  */
-const MovingAverageResultSchema = z.object({
-  value: z
-    .number()
-    .nullable()
-    .describe('Moving average value or null if insufficient data'),
-  period: z.number().describe('Moving average calculation period'),
-});
-type MovingAverageResult = z.output<typeof MovingAverageResultSchema>;
+export interface MovingAverageResult {
+  /** Moving average value or null if insufficient data */
+  value: number | null;
+  /** Moving average calculation period */
+  period: number;
+}
 
 /**
- * ADX indicator result schema.
+ * ADX indicator result.
  */
-const ADXResultSchema = z.object({
-  adx: z
-    .number()
-    .nullable()
-    .describe('ADX value (trend strength 0-100) or null if insufficient data'),
-  plusDI: z
-    .number()
-    .nullable()
-    .describe(
-      'Positive Directional Indicator (+DI) or null if insufficient data',
-    ),
-  minusDI: z
-    .number()
-    .nullable()
-    .describe(
-      'Negative Directional Indicator (-DI) or null if insufficient data',
-    ),
-  period: z.number().describe('ADX calculation period'),
-});
-type ADXResult = z.output<typeof ADXResultSchema>;
+export interface ADXResult {
+  /** ADX value (trend strength 0-100) or null if insufficient data */
+  adx: number | null;
+  /** Positive Directional Indicator (+DI) or null if insufficient data */
+  plusDI: number | null;
+  /** Negative Directional Indicator (-DI) or null if insufficient data */
+  minusDI: number | null;
+  /** ADX calculation period */
+  period: number;
+}
 
 /**
- * Stochastic indicator result schema.
+ * Stochastic indicator result.
  */
-const StochasticResultSchema = z.object({
-  k: z
-    .number()
-    .nullable()
-    .describe('Stochastic %K value (0-100) or null if insufficient data'),
-  d: z
-    .number()
-    .nullable()
-    .describe(
-      'Stochastic %D (signal line) value (0-100) or null if insufficient data',
-    ),
-  period: z.number().describe('Stochastic %K calculation period'),
-  signalPeriod: z.number().describe('Signal line (%D) smoothing period'),
-});
-type StochasticResult = z.output<typeof StochasticResultSchema>;
+export interface StochasticResult {
+  /** Stochastic %K value (0-100) or null if insufficient data */
+  k: number | null;
+  /** Stochastic %D (signal line) value (0-100) or null if insufficient data */
+  d: number | null;
+  /** Stochastic %K calculation period */
+  period: number;
+  /** Signal line (%D) smoothing period */
+  signalPeriod: number;
+}
 
 /**
- * ATR indicator result schema.
+ * ATR indicator result.
  */
-const ATRResultSchema = z.object({
-  value: z
-    .number()
-    .nullable()
-    .describe('Average True Range value or null if insufficient data'),
-  period: z.number().describe('ATR calculation period'),
-});
-type ATRResult = z.output<typeof ATRResultSchema>;
+export interface ATRResult {
+  /** Average True Range value or null if insufficient data */
+  value: number | null;
+  /** ATR calculation period */
+  period: number;
+}
 
 /**
- * OBV indicator result schema.
+ * OBV indicator result.
  */
-const OBVResultSchema = z.object({
-  value: z
-    .number()
-    .nullable()
-    .describe(
-      'On-Balance Volume value or null if insufficient data or no volume',
-    ),
-});
-type OBVResult = z.output<typeof OBVResultSchema>;
+export interface OBVResult {
+  /** On-Balance Volume value or null if insufficient data or no volume */
+  value: number | null;
+}
 
 /**
- * VWAP indicator result schema.
+ * VWAP indicator result.
  */
-const VWAPResultSchema = z.object({
-  value: z
-    .number()
-    .nullable()
-    .describe(
-      'Volume Weighted Average Price or null if insufficient data or no volume',
-    ),
-});
-type VWAPResult = z.output<typeof VWAPResultSchema>;
-
-export type {
-  Candle,
-  RSIResult,
-  MACDResult,
-  BollingerBandsResult,
-  MovingAverageResult,
-  ADXResult,
-  StochasticResult,
-  ATRResult,
-  OBVResult,
-  VWAPResult,
-};
+export interface VWAPResult {
+  /** Volume Weighted Average Price or null if insufficient data or no volume */
+  value: number | null;
+}

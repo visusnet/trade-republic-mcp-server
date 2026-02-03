@@ -35,10 +35,9 @@ export const PERIODS_PER_YEAR: Record<string, number> = {
 /**
  * Internal result type schemas
  *
- * These schemas are used only for type derivation (via z.output<typeof Schema>).
- * They are not exported because they are not used for runtime validation.
+ * These schemas are used both for type derivation and as building blocks
+ * for the response schema (DRY principle).
  */
-/* eslint-disable @typescript-eslint/no-unused-vars */
 
 /**
  * Volatility calculation result schema.
@@ -178,31 +177,9 @@ export const GetRiskMetricsRequestSchema = z.object({
 export type GetRiskMetricsRequest = z.infer<typeof GetRiskMetricsRequestSchema>;
 
 export const GetRiskMetricsResponseSchema = z.object({
-  volatility: z.object({
-    daily: z
-      .number()
-      .describe('Daily volatility (standard deviation of log returns)'),
-    annualized: z.number().describe('Annualized volatility'),
-  }),
-  valueAtRisk: z.object({
-    parametric: z
-      .number()
-      .describe('Parametric VaR (negative value = expected loss)'),
-    historical: z
-      .number()
-      .describe('Historical VaR (negative value = expected loss)'),
-    confidenceLevel: z
-      .string()
-      .describe('Confidence level used (0.95 or 0.99)'),
-  }),
-  maxDrawdown: z.object({
-    value: z.number().describe('Maximum drawdown in absolute price terms'),
-    percent: z
-      .number()
-      .describe('Maximum drawdown as percentage (positive value)'),
-    peakIndex: z.number().int().describe('Index of peak price'),
-    troughIndex: z.number().int().describe('Index of trough price'),
-  }),
+  volatility: VolatilityResultSchema,
+  valueAtRisk: VaRResultSchema,
+  maxDrawdown: MaxDrawdownResultSchema,
   sharpeRatio: z
     .number()
     .nullable()
