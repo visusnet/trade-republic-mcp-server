@@ -865,7 +865,7 @@ describe('TechnicalAnalysisService', () => {
       calculateSMAMock.mockReturnValue({ value: 100, period: 20 });
     };
 
-    it('should generate RSI oversold signal for low RSI', async () => {
+    it('should generate moderate RSI buy signal for RSI between 20 and 30', async () => {
       const candles = generateTrendingCandles(100, 'down');
       setupDefaultMocks(candles);
       calculateRSIMock.mockReturnValue({ value: 25, period: 14 });
@@ -877,6 +877,7 @@ describe('TechnicalAnalysisService', () => {
       const rsiSignal = result.signals.find((s) => s.indicator === 'RSI');
       expect(rsiSignal).toBeDefined();
       expect(rsiSignal?.signal).toBe('buy');
+      expect(rsiSignal?.strength).toBe('moderate');
     });
 
     it('should generate strong RSI buy signal for extreme RSI < 20', async () => {
@@ -894,7 +895,7 @@ describe('TechnicalAnalysisService', () => {
       expect(rsiSignal?.strength).toBe('strong');
     });
 
-    it('should generate RSI overbought signal for high RSI', async () => {
+    it('should generate moderate RSI sell signal for RSI between 70 and 80', async () => {
       const candles = generateTrendingCandles(100, 'up');
       setupDefaultMocks(candles);
       calculateRSIMock.mockReturnValue({ value: 75, period: 14 });
@@ -906,6 +907,7 @@ describe('TechnicalAnalysisService', () => {
       const rsiSignal = result.signals.find((s) => s.indicator === 'RSI');
       expect(rsiSignal).toBeDefined();
       expect(rsiSignal?.signal).toBe('sell');
+      expect(rsiSignal?.strength).toBe('moderate');
     });
 
     it('should generate strong RSI sell signal for extreme RSI > 80', async () => {
@@ -1631,6 +1633,48 @@ describe('TechnicalAnalysisService', () => {
       });
 
       expect(result.summary.overallSignal).toBe('hold');
+    });
+
+    it('should handle zero signals when all indicators return null', async () => {
+      const candles = generateCandles(100);
+      setupBaseMocks(candles);
+      // Set all indicators to return null so no signals are generated
+      calculateRSIMock.mockReturnValue({ value: null, period: 14 });
+      calculateMACDMock.mockReturnValue({
+        macd: null,
+        signal: null,
+        histogram: null,
+        fastPeriod: 12,
+        slowPeriod: 26,
+        signalPeriod: 9,
+      });
+      calculateBollingerBandsMock.mockReturnValue({
+        upper: null,
+        middle: null,
+        lower: null,
+        pb: null,
+        bandwidth: null,
+        period: 20,
+        stdDev: 2,
+      });
+      calculateStochasticMock.mockReturnValue({
+        k: null,
+        d: null,
+        period: 14,
+        signalPeriod: 3,
+      });
+
+      const result = await service.getDetailedAnalysis({
+        isin: 'DE0007164600',
+      });
+
+      expect(result.summary.overallSignal).toBe('hold');
+      expect(result.summary.confidence).toBe(0);
+      expect(result.summary.score).toBe(0);
+      expect(result.summary.bullishCount).toBe(0);
+      expect(result.summary.bearishCount).toBe(0);
+      expect(result.summary.neutralCount).toBe(0);
+      expect(result.signals).toHaveLength(0);
     });
   });
 

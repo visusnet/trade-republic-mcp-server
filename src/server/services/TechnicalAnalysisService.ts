@@ -447,10 +447,6 @@ export class TechnicalAnalysisService {
    * Calculate previous MACD histogram for crossover detection.
    */
   private calculatePreviousMACDHistogram(candles: Candle[]): number | null {
-    // istanbul ignore next - unreachable with 50+ candle minimum for detailed analysis
-    if (candles.length < 2) {
-      return null;
-    }
     const previousCandles = candles.slice(0, -1);
     const prevMacd = this.indicatorsService.calculateMACD(previousCandles);
     return sanitizeNumber(prevMacd.histogram);
@@ -488,7 +484,6 @@ export class TechnicalAnalysisService {
 
     // Handle division by zero
     const totalScore = bullishScore + bearishScore;
-    // istanbul ignore next - edge case when no bullish or bearish signals
     const score =
       totalScore === 0 ? 0 : ((bullishScore - bearishScore) / totalScore) * 100;
 
@@ -498,7 +493,6 @@ export class TechnicalAnalysisService {
     // Calculate confidence based on signal agreement
     const totalSignals = bullishCount + bearishCount + neutralCount;
     const dominantCount = Math.max(bullishCount, bearishCount, neutralCount);
-    // istanbul ignore next - edge case when no signals
     const confidence =
       totalSignals > 0 ? (dominantCount / totalSignals) * 100 : 0;
 
@@ -555,7 +549,6 @@ export class TechnicalAnalysisService {
    * Get RSI oversold signal strength.
    * @internal
    */
-  /* istanbul ignore next - edge case for extreme RSI < 20 depends on market conditions */
   private getRSIOversoldStrength(rsi: number): SignalStrength {
     return rsi < 20 ? 'strong' : 'moderate';
   }
@@ -564,7 +557,6 @@ export class TechnicalAnalysisService {
    * Get RSI overbought signal strength.
    * @internal
    */
-  /* istanbul ignore next - edge case for extreme RSI > 80 depends on market conditions */
   private getRSIOverboughtStrength(rsi: number): SignalStrength {
     return rsi > 80 ? 'strong' : 'moderate';
   }
@@ -573,7 +565,6 @@ export class TechnicalAnalysisService {
    * Generate stochastic signal based on k and d values.
    * @internal
    */
-  /* istanbul ignore next - stochastic signal conditions depend on market conditions */
   private generateStochasticSignal(k: number, d: number): IndicatorSignal {
     if (k < 20 && d < 20) {
       return {
@@ -622,7 +613,6 @@ export class TechnicalAnalysisService {
    * Convert score to signal direction.
    * @internal
    */
-  /* istanbul ignore next - score thresholds depend on market conditions */
   private scoreToSignal(score: number): SignalDirection {
     if (score > 20) {
       return 'buy';
@@ -637,7 +627,6 @@ export class TechnicalAnalysisService {
    * Convert ADX value to trend strength.
    * @internal
    */
-  /* istanbul ignore next - ADX strength thresholds depend on market conditions */
   private adxToStrength(adx: number): SignalStrength {
     if (adx > 40) {
       return 'strong';

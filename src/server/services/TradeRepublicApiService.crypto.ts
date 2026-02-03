@@ -43,7 +43,6 @@ export class CryptoManager {
           privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
         },
         (err, publicKeyPem, privateKeyPem) => {
-          /* istanbul ignore if -- @preserve Node.js crypto error path */
           if (err) {
             reject(err);
             return;

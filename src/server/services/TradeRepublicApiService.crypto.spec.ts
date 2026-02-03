@@ -53,6 +53,38 @@ describe('CryptoManager', () => {
       expect(keyPair1.privateKeyPem).not.toEqual(keyPair2.privateKeyPem);
       expect(keyPair1.publicKeyPem).not.toEqual(keyPair2.publicKeyPem);
     });
+
+    it('should reject when generateKeyPair fails', async () => {
+      const mockError = new Error('Key generation failed');
+
+      await jest.isolateModulesAsync(async () => {
+        // Mock crypto before importing CryptoManager
+        const actualCrypto =
+          jest.requireActual<typeof import('node:crypto')>('node:crypto');
+        jest.doMock('node:crypto', () => ({
+          ...actualCrypto,
+          generateKeyPair: (
+            _type: string,
+            _options: unknown,
+            callback: (
+              err: Error | null,
+              publicKey: string,
+              privateKey: string,
+            ) => void,
+          ) => {
+            callback(mockError, '', '');
+          },
+        }));
+
+        const { CryptoManager: IsolatedCryptoManager } =
+          await import('./TradeRepublicApiService.crypto');
+        const isolatedManager = new IsolatedCryptoManager('/test/config');
+
+        await expect(isolatedManager.generateKeyPair()).rejects.toThrow(
+          'Key generation failed',
+        );
+      });
+    });
   });
 
   describe('saveKeyPair', () => {

@@ -60,11 +60,6 @@ export class TechnicalIndicatorsService {
     const values = candles.map((c) => c.close);
     const rsiValues = RSI.calculate({ values, period });
 
-    // istanbul ignore next - defensive check for unexpected library behavior
-    if (rsiValues.length === 0) {
-      return { value: null, period };
-    }
-
     return {
       value: rsiValues[rsiValues.length - 1],
       period,
@@ -106,18 +101,6 @@ export class TechnicalIndicatorsService {
       SimpleMASignal: false,
     });
 
-    // istanbul ignore next - defensive check for unexpected library behavior
-    if (macdValues.length === 0) {
-      return {
-        macd: null,
-        signal: null,
-        histogram: null,
-        fastPeriod,
-        slowPeriod,
-        signalPeriod,
-      };
-    }
-
     const lastMacd = macdValues[macdValues.length - 1];
 
     return {
@@ -156,19 +139,6 @@ export class TechnicalIndicatorsService {
     const values = candles.map((c) => c.close);
     const bbValues = BollingerBands.calculate({ values, period, stdDev });
 
-    // istanbul ignore next - defensive check for unexpected library behavior
-    if (bbValues.length === 0) {
-      return {
-        upper: null,
-        middle: null,
-        lower: null,
-        pb: null,
-        bandwidth: null,
-        period,
-        stdDev,
-      };
-    }
-
     const lastBb = bbValues[bbValues.length - 1];
     const bandwidth = (lastBb.upper - lastBb.lower) / lastBb.middle;
 
@@ -199,11 +169,6 @@ export class TechnicalIndicatorsService {
     const values = candles.map((c) => c.close);
     const smaValues = SMA.calculate({ values, period });
 
-    // istanbul ignore next - defensive check for unexpected library behavior
-    if (smaValues.length === 0) {
-      return { value: null, period };
-    }
-
     return {
       value: smaValues[smaValues.length - 1],
       period,
@@ -225,11 +190,6 @@ export class TechnicalIndicatorsService {
 
     const values = candles.map((c) => c.close);
     const emaValues = EMA.calculate({ values, period });
-
-    // istanbul ignore next - defensive check for unexpected library behavior
-    if (emaValues.length === 0) {
-      return { value: null, period };
-    }
 
     return {
       value: emaValues[emaValues.length - 1],
@@ -256,11 +216,6 @@ export class TechnicalIndicatorsService {
     const close = candles.map((c) => c.close);
 
     const adxValues = ADX.calculate({ high, low, close, period });
-
-    // istanbul ignore next - defensive check for unexpected library behavior
-    if (adxValues.length === 0) {
-      return { adx: null, plusDI: null, minusDI: null, period };
-    }
 
     const lastAdx = adxValues[adxValues.length - 1];
 
@@ -300,11 +255,6 @@ export class TechnicalIndicatorsService {
       signalPeriod,
     });
 
-    // istanbul ignore next - defensive check for unexpected library behavior
-    if (stochValues.length === 0) {
-      return { k: null, d: null, period, signalPeriod };
-    }
-
     const lastStoch = stochValues[stochValues.length - 1];
 
     return {
@@ -334,11 +284,6 @@ export class TechnicalIndicatorsService {
 
     const atrValues = ATR.calculate({ high, low, close, period });
 
-    // istanbul ignore next - defensive check for unexpected library behavior
-    if (atrValues.length === 0) {
-      return { value: null, period };
-    }
-
     return {
       value: atrValues[atrValues.length - 1],
       period,
@@ -363,11 +308,6 @@ export class TechnicalIndicatorsService {
     const volume = candles.map((c) => c.volume as number);
 
     const obvValues = OBV.calculate({ close, volume });
-
-    // istanbul ignore next - defensive check for unexpected library behavior
-    if (obvValues.length === 0) {
-      return { value: null };
-    }
 
     return {
       value: obvValues[obvValues.length - 1],
@@ -394,11 +334,6 @@ export class TechnicalIndicatorsService {
     const volume = candles.map((c) => c.volume as number);
 
     const vwapValues = VWAP.calculate({ high, low, close, volume });
-
-    // istanbul ignore next - defensive check for unexpected library behavior
-    if (vwapValues.length === 0) {
-      return { value: null };
-    }
 
     return {
       value: vwapValues[vwapValues.length - 1],
