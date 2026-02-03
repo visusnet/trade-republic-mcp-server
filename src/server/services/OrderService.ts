@@ -26,7 +26,7 @@ import {
   type ModifyOrderResponse,
   type CancelOrderResponse,
 } from './OrderService.response';
-import { OrderServiceError } from './OrderService.types';
+import { OrderServiceError, OrderValidationError } from './OrderService.types';
 
 export class OrderService {
   constructor(private readonly api: TradeRepublicApiService) {}
@@ -35,6 +35,7 @@ export class OrderService {
     request: PlaceOrderRequest,
   ): Promise<PlaceOrderResponse> {
     this.ensureAuthenticated();
+    this.validatePlaceOrderRequest(request);
     logger.api.info({ request }, 'Placing order');
 
     const payload = this.buildOrderPayload(request);
@@ -80,6 +81,29 @@ export class OrderService {
     const authStatus = this.api.getAuthStatus();
     if (authStatus !== AuthStatus.AUTHENTICATED) {
       throw new TradeRepublicError('Not authenticated');
+    }
+  }
+
+  private validatePlaceOrderRequest(request: PlaceOrderRequest): void {
+    if (request.mode === 'limit' && request.limitPrice === undefined) {
+      throw new OrderValidationError(
+        'limitPrice is required for limit orders',
+        'MISSING_LIMIT_PRICE',
+      );
+    }
+
+    if (request.mode === 'stopMarket' && request.stopPrice === undefined) {
+      throw new OrderValidationError(
+        'stopPrice is required for stop-market orders',
+        'MISSING_STOP_PRICE',
+      );
+    }
+
+    if (request.expiry === 'gtd' && request.expiryDate === undefined) {
+      throw new OrderValidationError(
+        'expiryDate is required for gtd expiry',
+        'MISSING_EXPIRY_DATE',
+      );
     }
   }
 

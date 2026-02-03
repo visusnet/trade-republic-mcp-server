@@ -8,17 +8,14 @@ import {
 } from '@jest/globals';
 import { EventEmitter } from 'events';
 
+import type { CloseEvent, ErrorEvent, MessageEvent, WebSocket } from 'undici';
+
 import { mockLogger } from '@test/loggerMock';
 import {
   ConnectionStatus,
   MESSAGE_CODE,
   TR_WS_URL,
-  type WebSocket,
-  type WebSocketCloseEvent,
-  type WebSocketErrorEvent,
   type WebSocketMessage,
-  type WebSocketMessageEvent,
-  type WebSocketOpenEvent,
 } from './TradeRepublicApiService.types';
 
 const logger = mockLogger();
@@ -26,10 +23,19 @@ jest.mock('../../logger', () => ({
   logger,
 }));
 
-/** Extended mock interface for testing with mutable readyState */
-interface MockWebSocket extends WebSocket {
+/** Mock WebSocket interface for testing with mutable readyState */
+interface MockWebSocket {
   _readyState: number;
+  readonly readyState: number;
   setReadyState(state: number): void;
+  readonly OPEN: number;
+  readonly CLOSED: number;
+  readonly CONNECTING: number;
+  readonly CLOSING: number;
+  send(data: string): void;
+  close(): void;
+  addEventListener: WebSocket['addEventListener'];
+  removeEventListener: WebSocket['removeEventListener'];
   emit: (event: string, eventData?: unknown) => boolean;
 }
 
@@ -100,7 +106,7 @@ import { WebSocketManager } from './TradeRepublicApiService.websocket';
  * Helper to emit a message event in the new format
  */
 function emitMessage(ws: MockWebSocket, data: string | Buffer): boolean {
-  const event: WebSocketMessageEvent = { type: 'message', data };
+  const event = { type: 'message', data } as MessageEvent;
   return ws.emit('message', event);
 }
 
@@ -108,7 +114,7 @@ function emitMessage(ws: MockWebSocket, data: string | Buffer): boolean {
  * Helper to emit an open event
  */
 function emitOpen(ws: MockWebSocket): boolean {
-  const event: WebSocketOpenEvent = { type: 'open' };
+  const event = { type: 'open' } as Event;
   return ws.emit('open', event);
 }
 
@@ -116,7 +122,7 @@ function emitOpen(ws: MockWebSocket): boolean {
  * Helper to emit a close event
  */
 function emitClose(ws: MockWebSocket, code: number, reason: string): boolean {
-  const event: WebSocketCloseEvent = { type: 'close', code, reason };
+  const event = { type: 'close', code, reason } as CloseEvent;
   return ws.emit('close', event);
 }
 
@@ -124,11 +130,11 @@ function emitClose(ws: MockWebSocket, code: number, reason: string): boolean {
  * Helper to emit an error event
  */
 function emitError(ws: MockWebSocket, error: Error): boolean {
-  const event: WebSocketErrorEvent = {
+  const event = {
     type: 'error',
     error,
     message: error.message,
-  };
+  } as ErrorEvent;
   return ws.emit('error', event);
 }
 
@@ -222,10 +228,10 @@ describe('WebSocketManager', () => {
       const connectPromise = wsManager.connect('test-session-token');
 
       // Emit error event with message but no error object during connecting
-      const event: WebSocketErrorEvent = {
+      const event = {
         type: 'error',
         message: 'Connection reset by peer',
-      };
+      } as ErrorEvent;
       mockWs.emit('error', event);
 
       await expect(connectPromise).rejects.toThrow('Connection reset by peer');
@@ -817,10 +823,10 @@ describe('WebSocketManager', () => {
       wsManager.on('error', errorHandler);
 
       // Emit error event with message but no error object
-      const event: WebSocketErrorEvent = {
+      const event = {
         type: 'error',
         message: 'Connection reset',
-      };
+      } as ErrorEvent;
       mockWs.emit('error', event);
 
       expect(errorHandler).toHaveBeenCalledWith(
@@ -835,9 +841,9 @@ describe('WebSocketManager', () => {
       wsManager.on('error', errorHandler);
 
       // Emit error event with no error or message
-      const event: WebSocketErrorEvent = {
+      const event = {
         type: 'error',
-      };
+      } as ErrorEvent;
       mockWs.emit('error', event);
 
       expect(errorHandler).toHaveBeenCalledWith(

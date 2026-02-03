@@ -8,30 +8,19 @@ import { z } from 'zod';
 // Place Order Request
 // =============================================================================
 
-export const PlaceOrderRequestSchema = z
-  .object({
-    isin: z.string().length(12),
-    exchange: z.string().default('LSX'),
-    orderType: z.enum(['buy', 'sell']),
-    mode: z.enum(['market', 'limit', 'stopMarket']),
-    size: z.number().positive(),
-    limitPrice: z.number().positive().optional(),
-    stopPrice: z.number().positive().optional(),
-    expiry: z.enum(['gfd', 'gtd', 'gtc']).default('gfd'),
-    expiryDate: z.string().optional(),
-    sellFractions: z.boolean().default(false),
-    warningsShown: z.array(z.string()).default([]),
-  })
-  .refine((data) => data.mode !== 'limit' || data.limitPrice !== undefined, {
-    message: 'limitPrice is required for limit orders',
-  })
-  .refine(
-    (data) => data.mode !== 'stopMarket' || data.stopPrice !== undefined,
-    { message: 'stopPrice is required for stop-market orders' },
-  )
-  .refine((data) => data.expiry !== 'gtd' || data.expiryDate !== undefined, {
-    message: 'expiryDate is required for gtd expiry',
-  });
+export const PlaceOrderRequestSchema = z.object({
+  isin: z.string().length(12),
+  exchange: z.string().default('LSX'),
+  orderType: z.enum(['buy', 'sell']),
+  mode: z.enum(['market', 'limit', 'stopMarket']),
+  size: z.number().positive(),
+  limitPrice: z.number().positive().optional(),
+  stopPrice: z.number().positive().optional(),
+  expiry: z.enum(['gfd', 'gtd', 'gtc']).default('gfd'),
+  expiryDate: z.string().optional(),
+  sellFractions: z.boolean().default(false),
+  warningsShown: z.array(z.string()).default([]),
+});
 
 export type PlaceOrderRequest = z.input<typeof PlaceOrderRequestSchema>;
 

@@ -156,58 +156,5 @@ export interface WebSocketOptions {
   headers?: Record<string, string>;
 }
 
-/** WebSocket event types for undici/browser API */
-export interface WebSocketOpenEvent {
-  type: 'open';
-}
-
-export interface WebSocketMessageEvent {
-  type: 'message';
-  data: string | Buffer;
-}
-
-export interface WebSocketCloseEvent {
-  type: 'close';
-  code: number;
-  reason: string;
-}
-
-export interface WebSocketErrorEvent {
-  type: 'error';
-  error?: Error;
-  message?: string;
-}
-
-/** WebSocket interface for dependency injection (undici/browser API) */
-export interface WebSocket {
-  readonly readyState: number;
-  readonly OPEN: number;
-  readonly CLOSED: number;
-  readonly CONNECTING: number;
-  readonly CLOSING: number;
-  send(data: string): void;
-  close(): void;
-  addEventListener(
-    event: 'open',
-    listener: (event: WebSocketOpenEvent) => void,
-  ): void;
-  addEventListener(
-    event: 'message',
-    listener: (event: WebSocketMessageEvent) => void,
-  ): void;
-  addEventListener(
-    event: 'error',
-    listener: (event: WebSocketErrorEvent) => void,
-  ): void;
-  addEventListener(
-    event: 'close',
-    listener: (event: WebSocketCloseEvent) => void,
-  ): void;
-  removeEventListener(
-    event: string,
-    listener: (...args: unknown[]) => void,
-  ): void;
-}
-
 /** HTTP fetch function type */
 export type FetchFunction = typeof fetch;

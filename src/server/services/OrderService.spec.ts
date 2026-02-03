@@ -135,7 +135,7 @@ describe('OrderService.request', () => {
       });
     });
 
-    it('should reject limit order without limitPrice', async () => {
+    it('should accept limit order without limitPrice in schema (validation moved to service)', async () => {
       const { PlaceOrderRequestSchema } =
         await import('./OrderService.request');
 
@@ -148,16 +148,8 @@ describe('OrderService.request', () => {
 
       const result = PlaceOrderRequestSchema.safeParse(request);
 
-      expect(result.success).toBe(false);
-      expect(result).toHaveProperty('error');
-      // Type assertion needed for conditional Zod parsing results
-      const error = (
-        result as {
-          success: false;
-          error: { issues: Array<{ message: string }> };
-        }
-      ).error;
-      expect(error.issues[0].message).toContain('limitPrice');
+      // Schema parsing succeeds - validation moved to service
+      expect(result.success).toBe(true);
     });
 
     it('should validate a stop-market order with stopPrice', async () => {
@@ -184,7 +176,7 @@ describe('OrderService.request', () => {
       });
     });
 
-    it('should reject stop-market order without stopPrice', async () => {
+    it('should accept stop-market order without stopPrice in schema (validation moved to service)', async () => {
       const { PlaceOrderRequestSchema } =
         await import('./OrderService.request');
 
@@ -197,16 +189,8 @@ describe('OrderService.request', () => {
 
       const result = PlaceOrderRequestSchema.safeParse(request);
 
-      expect(result.success).toBe(false);
-      expect(result).toHaveProperty('error');
-      // Type assertion needed for conditional Zod parsing results
-      const error = (
-        result as {
-          success: false;
-          error: { issues: Array<{ message: string }> };
-        }
-      ).error;
-      expect(error.issues[0].message).toContain('stopPrice');
+      // Schema parsing succeeds - validation moved to service
+      expect(result.success).toBe(true);
     });
 
     it('should validate gtd expiry with expiryDate', async () => {
@@ -235,7 +219,7 @@ describe('OrderService.request', () => {
       });
     });
 
-    it('should reject gtd expiry without expiryDate', async () => {
+    it('should accept gtd expiry without expiryDate in schema (validation moved to service)', async () => {
       const { PlaceOrderRequestSchema } =
         await import('./OrderService.request');
 
@@ -249,16 +233,8 @@ describe('OrderService.request', () => {
 
       const result = PlaceOrderRequestSchema.safeParse(request);
 
-      expect(result.success).toBe(false);
-      expect(result).toHaveProperty('error');
-      // Type assertion needed for conditional Zod parsing results
-      const error = (
-        result as {
-          success: false;
-          error: { issues: Array<{ message: string }> };
-        }
-      ).error;
-      expect(error.issues[0].message).toContain('expiryDate');
+      // Schema parsing succeeds - validation moved to service
+      expect(result.success).toBe(true);
     });
 
     it('should reject invalid ISIN length', async () => {
@@ -538,6 +514,65 @@ describe('OrderService', () => {
           size: 10,
         }),
       ).rejects.toThrow('Not authenticated');
+    });
+
+    it('should throw OrderValidationError for limit order without limitPrice', async () => {
+      await expect(
+        service.placeOrder({
+          isin: 'US0378331005',
+          orderType: 'buy',
+          mode: 'limit',
+          size: 5,
+        }),
+      ).rejects.toThrow(OrderValidationError);
+      await expect(
+        service.placeOrder({
+          isin: 'US0378331005',
+          orderType: 'buy',
+          mode: 'limit',
+          size: 5,
+        }),
+      ).rejects.toThrow('limitPrice is required for limit orders');
+    });
+
+    it('should throw OrderValidationError for stop-market order without stopPrice', async () => {
+      await expect(
+        service.placeOrder({
+          isin: 'US0378331005',
+          orderType: 'buy',
+          mode: 'stopMarket',
+          size: 5,
+        }),
+      ).rejects.toThrow(OrderValidationError);
+      await expect(
+        service.placeOrder({
+          isin: 'US0378331005',
+          orderType: 'buy',
+          mode: 'stopMarket',
+          size: 5,
+        }),
+      ).rejects.toThrow('stopPrice is required for stop-market orders');
+    });
+
+    it('should throw OrderValidationError for gtd expiry without expiryDate', async () => {
+      await expect(
+        service.placeOrder({
+          isin: 'DE0007164600',
+          orderType: 'buy',
+          mode: 'market',
+          size: 10,
+          expiry: 'gtd',
+        }),
+      ).rejects.toThrow(OrderValidationError);
+      await expect(
+        service.placeOrder({
+          isin: 'DE0007164600',
+          orderType: 'buy',
+          mode: 'market',
+          size: 10,
+          expiry: 'gtd',
+        }),
+      ).rejects.toThrow('expiryDate is required for gtd expiry');
     });
 
     it('should call subscribeAndWait with correct parameters for market order', async () => {

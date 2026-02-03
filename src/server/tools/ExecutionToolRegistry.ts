@@ -24,8 +24,6 @@ export class ExecutionToolRegistry extends ToolRegistry {
   }
 
   public register(): void {
-    // PlaceOrderRequestSchema has refinements, so we can't use .shape
-    // Instead, we pass it as a schema directly
     this.registerTool(
       'place_order',
       {
@@ -36,7 +34,7 @@ export class ExecutionToolRegistry extends ToolRegistry {
           'Supports various expiry options (gfd, gtc, gtd). ' +
           'Requires authentication. ' +
           'Always verify order details before execution.',
-        inputSchema: PlaceOrderRequestSchema as never,
+        inputSchema: PlaceOrderRequestSchema.shape,
       },
       this.orderService.placeOrder.bind(this.orderService),
     );

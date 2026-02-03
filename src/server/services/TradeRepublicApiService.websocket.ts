@@ -6,7 +6,7 @@
 
 import { EventEmitter } from 'events';
 
-import { WebSocket as UndiciWebSocket } from 'undici';
+import { CloseEvent, MessageEvent, WebSocket } from 'undici';
 
 import { logger } from '../../logger';
 import {
@@ -15,14 +15,19 @@ import {
   TR_WS_URL,
   WebSocketError,
   type MessageCode,
-  type WebSocket,
-  type WebSocketCloseEvent,
-  type WebSocketErrorEvent,
   type WebSocketMessage,
-  type WebSocketMessageEvent,
-  type WebSocketOpenEvent,
   type WebSocketOptions,
 } from './TradeRepublicApiService.types';
+
+/**
+ * Extended ErrorEvent type that allows for optional error and message properties.
+ * While Undici's type says these are always present, in practice error events
+ * may not always have them populated.
+ */
+interface WebSocketErrorEvent extends Event {
+  readonly error?: Error;
+  readonly message?: string;
+}
 
 /** Heartbeat check interval in milliseconds (20s, matching pytr) */
 const HEARTBEAT_CHECK_MS = 20_000;
@@ -52,11 +57,10 @@ export class WebSocketManager extends EventEmitter {
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
 
   // Store bound event handlers for proper cleanup
-  private openHandler: ((event: WebSocketOpenEvent) => void) | null = null;
-  private messageHandler: ((event: WebSocketMessageEvent) => void) | null =
-    null;
+  private openHandler: ((event: Event) => void) | null = null;
+  private messageHandler: ((event: MessageEvent) => void) | null = null;
   private errorHandler: ((event: WebSocketErrorEvent) => void) | null = null;
-  private closeHandler: ((event: WebSocketCloseEvent) => void) | null = null;
+  private closeHandler: ((event: CloseEvent) => void) | null = null;
 
   // Reconnection state
   private activeSubscriptions: Map<
@@ -251,7 +255,7 @@ export class WebSocketManager extends EventEmitter {
       const options: WebSocketOptions = cookieHeader
         ? { headers: { Cookie: cookieHeader } }
         : {};
-      this.ws = new UndiciWebSocket(TR_WS_URL, options) as unknown as WebSocket;
+      this.ws = new WebSocket(TR_WS_URL, options);
 
       this.openHandler = () => {
         this.status = ConnectionStatus.CONNECTED;
@@ -263,8 +267,8 @@ export class WebSocketManager extends EventEmitter {
         });
       };
 
-      this.messageHandler = (event: WebSocketMessageEvent) => {
-        this.handleMessage(event.data);
+      this.messageHandler = (event: MessageEvent) => {
+        this.handleMessage(event.data as Buffer | string);
       };
 
       this.errorHandler = (event: WebSocketErrorEvent) => {
@@ -283,7 +287,7 @@ export class WebSocketManager extends EventEmitter {
         }
       };
 
-      this.closeHandler = (event: WebSocketCloseEvent) => {
+      this.closeHandler = (event: CloseEvent) => {
         const reasonStr = event.reason;
         logger.api.info(`WebSocket closed: ${event.code} ${reasonStr}`);
         const wasConnecting = this.status === ConnectionStatus.CONNECTING;
