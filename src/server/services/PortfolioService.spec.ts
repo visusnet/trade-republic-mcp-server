@@ -1,7 +1,7 @@
-/* eslint-disable @typescript-eslint/unbound-method */
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 
 import { mockLogger } from '@test/loggerMock';
+import { mockTradeRepublicApiService } from '@test/serviceMocks';
 
 const logger = mockLogger();
 jest.mock('../../logger', () => ({
@@ -18,27 +18,6 @@ import {
   GetPortfolioResponseSchema,
   GetCashBalanceResponseSchema,
 } from './PortfolioService.response';
-
-/**
- * Creates a mock TradeRepublicApiService for testing.
- */
-function createMockApiService(): jest.Mocked<TradeRepublicApiService> {
-  return {
-    getAuthStatus: jest
-      .fn<() => AuthStatus>()
-      .mockReturnValue(AuthStatus.AUTHENTICATED),
-    subscribeAndWait: jest
-      .fn<
-        <T>(
-          topic: string,
-          payload: Record<string, unknown>,
-          schema: { safeParse: (data: unknown) => unknown },
-          timeoutMs?: number,
-        ) => Promise<T>
-      >()
-      .mockResolvedValue({} as never),
-  } as unknown as jest.Mocked<TradeRepublicApiService>;
-}
 
 describe('PortfolioService.response', () => {
   describe('GetPortfolioResponseSchema', () => {
@@ -182,18 +161,24 @@ describe('PortfolioService.response', () => {
 });
 
 describe('PortfolioService', () => {
-  let mockApi: jest.Mocked<TradeRepublicApiService>;
   let service: PortfolioService;
-  const CUSTOM_TIMEOUT = 5000;
 
   beforeEach(() => {
-    mockApi = createMockApiService();
-    service = new PortfolioService(mockApi, CUSTOM_TIMEOUT);
+    jest.clearAllMocks();
+    mockTradeRepublicApiService.getAuthStatus.mockReturnValue(
+      AuthStatus.AUTHENTICATED,
+    );
+    mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue({} as never);
+    service = new PortfolioService(
+      mockTradeRepublicApiService as unknown as TradeRepublicApiService,
+    );
   });
 
   describe('getPortfolio', () => {
     it('should throw if not authenticated', async () => {
-      mockApi.getAuthStatus.mockReturnValue(AuthStatus.UNAUTHENTICATED);
+      mockTradeRepublicApiService.getAuthStatus.mockReturnValue(
+        AuthStatus.UNAUTHENTICATED,
+      );
 
       await expect(service.getPortfolio()).rejects.toThrow(TradeRepublicError);
       await expect(service.getPortfolio()).rejects.toThrow('Not authenticated');
@@ -211,15 +196,16 @@ describe('PortfolioService', () => {
         ],
         netValue: 1000,
       };
-      mockApi.subscribeAndWait.mockResolvedValue(portfolioData);
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue(
+        portfolioData,
+      );
 
       await service.getPortfolio();
 
-      expect(mockApi.subscribeAndWait).toHaveBeenCalledWith(
+      expect(mockTradeRepublicApiService.subscribeAndWait).toHaveBeenCalledWith(
         'compactPortfolio',
         {},
         GetPortfolioResponseSchema,
-        CUSTOM_TIMEOUT,
       );
     });
 
@@ -235,7 +221,9 @@ describe('PortfolioService', () => {
         ],
         netValue: 1000,
       };
-      mockApi.subscribeAndWait.mockResolvedValue(portfolioData);
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue(
+        portfolioData,
+      );
 
       const result = await service.getPortfolio();
 
@@ -243,7 +231,7 @@ describe('PortfolioService', () => {
     });
 
     it('should propagate errors from subscribeAndWait', async () => {
-      mockApi.subscribeAndWait.mockRejectedValue(
+      mockTradeRepublicApiService.subscribeAndWait.mockRejectedValue(
         new TradeRepublicError('compactPortfolio request timed out'),
       );
 
@@ -253,7 +241,7 @@ describe('PortfolioService', () => {
     });
 
     it('should log the request', async () => {
-      mockApi.subscribeAndWait.mockResolvedValue({
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue({
         positions: [],
         netValue: 0,
       });
@@ -266,7 +254,9 @@ describe('PortfolioService', () => {
 
   describe('getCashBalance', () => {
     it('should throw if not authenticated', async () => {
-      mockApi.getAuthStatus.mockReturnValue(AuthStatus.UNAUTHENTICATED);
+      mockTradeRepublicApiService.getAuthStatus.mockReturnValue(
+        AuthStatus.UNAUTHENTICATED,
+      );
 
       await expect(service.getCashBalance()).rejects.toThrow(
         TradeRepublicError,
@@ -278,21 +268,20 @@ describe('PortfolioService', () => {
 
     it('should call subscribeAndWait with correct parameters', async () => {
       const cashData = { availableCash: 1000, currency: 'EUR' };
-      mockApi.subscribeAndWait.mockResolvedValue(cashData);
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue(cashData);
 
       await service.getCashBalance();
 
-      expect(mockApi.subscribeAndWait).toHaveBeenCalledWith(
+      expect(mockTradeRepublicApiService.subscribeAndWait).toHaveBeenCalledWith(
         'cash',
         {},
         GetCashBalanceResponseSchema,
-        CUSTOM_TIMEOUT,
       );
     });
 
     it('should return the cash balance data from subscribeAndWait', async () => {
       const cashData = { availableCash: 2500.5, currency: 'EUR' };
-      mockApi.subscribeAndWait.mockResolvedValue(cashData);
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue(cashData);
 
       const result = await service.getCashBalance();
 
@@ -300,7 +289,7 @@ describe('PortfolioService', () => {
     });
 
     it('should propagate errors from subscribeAndWait', async () => {
-      mockApi.subscribeAndWait.mockRejectedValue(
+      mockTradeRepublicApiService.subscribeAndWait.mockRejectedValue(
         new TradeRepublicError('cash request timed out'),
       );
 
@@ -310,7 +299,7 @@ describe('PortfolioService', () => {
     });
 
     it('should log the request', async () => {
-      mockApi.subscribeAndWait.mockResolvedValue({
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue({
         availableCash: 0,
         currency: 'EUR',
       });

@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method */
 import {
   describe,
   it,
@@ -10,6 +9,7 @@ import {
 import { EventEmitter } from 'events';
 
 import { mockLogger } from '@test/loggerMock';
+import { mockFetchResponse, type MockResponse } from '@test/serviceMocks';
 
 const logger = mockLogger();
 jest.mock('../../logger', () => ({
@@ -77,11 +77,8 @@ function createMockRefreshResponse(cookies: string[] = []): Partial<Response> {
 /**
  * Creates a mock login response.
  */
-function createMockLoginResponse(): Partial<Response> {
-  return {
-    ok: true,
-    json: () => Promise.resolve({ processId: 'test-process-id' }),
-  };
+function createMockLoginResponse(): MockResponse<{ processId: string }> {
+  return mockFetchResponse({ processId: 'test-process-id' });
 }
 
 /**
@@ -94,7 +91,7 @@ function setupConnectMocks(mockFetch: jest.MockedFunction<typeof fetch>): void {
     callCount++;
     if (callCount === 1) {
       // Login response
-      return Promise.resolve(createMockLoginResponse() as Response);
+      return Promise.resolve(createMockLoginResponse());
     }
     // 2FA response
     return Promise.resolve(
@@ -104,6 +101,24 @@ function setupConnectMocks(mockFetch: jest.MockedFunction<typeof fetch>): void {
     );
   });
 }
+
+// Standalone mock functions to avoid unbound-method lint errors
+// CryptoManager mocks
+const generateKeyPairMock = jest.fn<() => Promise<KeyPair>>();
+const saveKeyPairMock = jest.fn<(keyPair: KeyPair) => Promise<void>>();
+const loadKeyPairMock = jest.fn<() => Promise<KeyPair | null>>();
+const hasStoredKeyPairMock = jest.fn<() => Promise<boolean>>();
+const signMock = jest.fn<(message: string, privateKey: string) => string>();
+const createSignedPayloadMock = jest.fn();
+const getPublicKeyBase64Mock = jest.fn<(publicKey: string) => string>();
+
+// WebSocketManager mocks
+const wsConnectMock = jest.fn<(token: string) => Promise<void>>();
+const wsDisconnectMock = jest.fn<() => void>();
+const wsSubscribeMock = jest.fn<(topic: string, payload: unknown) => number>();
+const wsUnsubscribeMock = jest.fn<(subscriptionId: number) => void>();
+const wsIsConnectedMock = jest.fn<() => boolean>();
+const wsGetConnectionStatusMock = jest.fn<() => ConnectionStatus>();
 
 describe('TradeRepublicApiService', () => {
   let mockCryptoManagerInstance: jest.Mocked<CryptoManager>;
@@ -121,34 +136,40 @@ describe('TradeRepublicApiService', () => {
   };
 
   beforeEach(() => {
+    // Reset standalone mocks
+    generateKeyPairMock.mockReset().mockResolvedValue(mockKeyPair);
+    saveKeyPairMock.mockReset().mockResolvedValue(undefined);
+    loadKeyPairMock.mockReset().mockResolvedValue(null);
+    hasStoredKeyPairMock.mockReset().mockResolvedValue(false);
+    signMock.mockReset().mockReturnValue('mock-signature');
+    createSignedPayloadMock.mockReset().mockReturnValue({
+      timestamp: new Date().toISOString(),
+      data: {},
+      signature: 'mock-signature',
+    });
+    getPublicKeyBase64Mock.mockReset().mockReturnValue('bW9jay1wdWJsaWMta2V5');
+
+    wsConnectMock.mockReset().mockResolvedValue(undefined);
+    wsDisconnectMock.mockReset();
+    wsSubscribeMock.mockReset().mockReturnValue(1);
+    wsUnsubscribeMock.mockReset();
+    wsIsConnectedMock.mockReset().mockReturnValue(true);
+    wsGetConnectionStatusMock
+      .mockReset()
+      .mockReturnValue(ConnectionStatus.CONNECTED);
+
     // Setup mock CryptoManager
     const MockedCryptoManager = jest.mocked(CryptoManager);
     MockedCryptoManager.mockClear();
 
     mockCryptoManagerInstance = {
-      generateKeyPair: jest
-        .fn<() => Promise<KeyPair>>()
-        .mockResolvedValue(mockKeyPair),
-      saveKeyPair: jest
-        .fn<(keyPair: KeyPair) => Promise<void>>()
-        .mockResolvedValue(undefined),
-      loadKeyPair: jest
-        .fn<() => Promise<KeyPair | null>>()
-        .mockResolvedValue(null),
-      hasStoredKeyPair: jest
-        .fn<() => Promise<boolean>>()
-        .mockResolvedValue(false),
-      sign: jest
-        .fn<(message: string, privateKey: string) => string>()
-        .mockReturnValue('mock-signature'),
-      createSignedPayload: jest.fn().mockReturnValue({
-        timestamp: new Date().toISOString(),
-        data: {},
-        signature: 'mock-signature',
-      }),
-      getPublicKeyBase64: jest
-        .fn<(publicKey: string) => string>()
-        .mockReturnValue('bW9jay1wdWJsaWMta2V5'),
+      generateKeyPair: generateKeyPairMock,
+      saveKeyPair: saveKeyPairMock,
+      loadKeyPair: loadKeyPairMock,
+      hasStoredKeyPair: hasStoredKeyPairMock,
+      sign: signMock,
+      createSignedPayload: createSignedPayloadMock,
+      getPublicKeyBase64: getPublicKeyBase64Mock,
     } as unknown as jest.Mocked<CryptoManager>;
 
     MockedCryptoManager.mockImplementation(() => mockCryptoManagerInstance);
@@ -159,17 +180,13 @@ describe('TradeRepublicApiService', () => {
 
     const emitter = new EventEmitter();
     mockWebSocketManagerInstance = {
-      connect: jest
-        .fn<(token: string) => Promise<void>>()
-        .mockResolvedValue(undefined),
-      disconnect: jest.fn<() => void>(),
-      getStatus: jest
-        .fn<() => ConnectionStatus>()
-        .mockReturnValue(ConnectionStatus.DISCONNECTED),
-      subscribe: jest
-        .fn<(topic: string, payload?: object) => number>()
-        .mockReturnValue(1),
-      unsubscribe: jest.fn<(id: number) => void>(),
+      connect: wsConnectMock,
+      disconnect: wsDisconnectMock,
+      getStatus: wsGetConnectionStatusMock.mockReturnValue(
+        ConnectionStatus.DISCONNECTED,
+      ),
+      subscribe: wsSubscribeMock,
+      unsubscribe: wsUnsubscribeMock,
       on: jest.fn((event: string, listener: (...args: unknown[]) => void) => {
         emitter.on(event, listener);
         return mockWebSocketManagerInstance;
@@ -230,9 +247,9 @@ describe('TradeRepublicApiService', () => {
       await jest.advanceTimersByTimeAsync(2000);
       await connectPromise;
 
-      expect(mockCryptoManagerInstance.hasStoredKeyPair).toHaveBeenCalled();
-      expect(mockCryptoManagerInstance.loadKeyPair).toHaveBeenCalled();
-      expect(mockCryptoManagerInstance.generateKeyPair).not.toHaveBeenCalled();
+      expect(hasStoredKeyPairMock).toHaveBeenCalled();
+      expect(loadKeyPairMock).toHaveBeenCalled();
+      expect(generateKeyPairMock).not.toHaveBeenCalled();
     });
 
     it('should generate new key pair if none stored', async () => {
@@ -243,8 +260,8 @@ describe('TradeRepublicApiService', () => {
       await jest.advanceTimersByTimeAsync(2000);
       await connectPromise;
 
-      expect(mockCryptoManagerInstance.generateKeyPair).toHaveBeenCalled();
-      expect(mockCryptoManagerInstance.saveKeyPair).toHaveBeenCalled();
+      expect(generateKeyPairMock).toHaveBeenCalled();
+      expect(saveKeyPairMock).toHaveBeenCalled();
     });
 
     it('should throw on invalid 2FA code format', async () => {
@@ -322,7 +339,7 @@ describe('TradeRepublicApiService', () => {
       mockFetch.mockImplementation(() => {
         callCount++;
         if (callCount === 1) {
-          return Promise.resolve(createMockLoginResponse() as Response);
+          return Promise.resolve(createMockLoginResponse());
         }
         return Promise.resolve({
           ok: false,
@@ -346,7 +363,7 @@ describe('TradeRepublicApiService', () => {
       mockFetch.mockImplementation(() => {
         callCount++;
         if (callCount === 1) {
-          return Promise.resolve(createMockLoginResponse() as Response);
+          return Promise.resolve(createMockLoginResponse());
         }
         return Promise.resolve({
           ok: false,
@@ -369,7 +386,7 @@ describe('TradeRepublicApiService', () => {
       mockFetch.mockImplementation(() => {
         callCount++;
         if (callCount === 1) {
-          return Promise.resolve(createMockLoginResponse() as Response);
+          return Promise.resolve(createMockLoginResponse());
         }
         return Promise.resolve({
           ok: false,
@@ -392,7 +409,7 @@ describe('TradeRepublicApiService', () => {
       mockFetch.mockImplementation(() => {
         callCount++;
         if (callCount === 1) {
-          return Promise.resolve(createMockLoginResponse() as Response);
+          return Promise.resolve(createMockLoginResponse());
         }
         return Promise.resolve({
           ok: false,
@@ -417,9 +434,7 @@ describe('TradeRepublicApiService', () => {
       await jest.advanceTimersByTimeAsync(2000);
       await connectPromise;
 
-      expect(mockWebSocketManagerInstance.connect).toHaveBeenCalledWith(
-        'session=test-session-cookie',
-      );
+      expect(wsConnectMock).toHaveBeenCalledWith('session=test-session-cookie');
     });
 
     it('should throw if no cookies received in 2FA response', async () => {
@@ -427,7 +442,7 @@ describe('TradeRepublicApiService', () => {
       mockFetch.mockImplementation(() => {
         callCount++;
         if (callCount === 1) {
-          return Promise.resolve(createMockLoginResponse() as Response);
+          return Promise.resolve(createMockLoginResponse());
         }
         return Promise.resolve(createMock2FAResponse([]) as Response);
       });
@@ -448,7 +463,7 @@ describe('TradeRepublicApiService', () => {
       mockFetch.mockImplementation(() => {
         callCount++;
         if (callCount === 1) {
-          return Promise.resolve(createMockLoginResponse() as Response);
+          return Promise.resolve(createMockLoginResponse());
         }
         return Promise.resolve({
           ok: true,
@@ -473,7 +488,7 @@ describe('TradeRepublicApiService', () => {
       mockFetch.mockImplementation(() => {
         callCount++;
         if (callCount === 1) {
-          return Promise.resolve(createMockLoginResponse() as Response);
+          return Promise.resolve(createMockLoginResponse());
         }
         // Mock response without getSetCookie, only get method
         return Promise.resolve({
@@ -493,9 +508,7 @@ describe('TradeRepublicApiService', () => {
       await jest.advanceTimersByTimeAsync(2000);
       await connectPromise;
 
-      expect(mockWebSocketManagerInstance.connect).toHaveBeenCalledWith(
-        'session=fallback-cookie',
-      );
+      expect(wsConnectMock).toHaveBeenCalledWith('session=fallback-cookie');
     });
 
     it('should parse multiple cookies from comma-separated set-cookie header', async () => {
@@ -503,7 +516,7 @@ describe('TradeRepublicApiService', () => {
       mockFetch.mockImplementation(() => {
         callCount++;
         if (callCount === 1) {
-          return Promise.resolve(createMockLoginResponse() as Response);
+          return Promise.resolve(createMockLoginResponse());
         }
         return Promise.resolve({
           ok: true,
@@ -521,7 +534,7 @@ describe('TradeRepublicApiService', () => {
       await jest.advanceTimersByTimeAsync(2000);
       await connectPromise;
 
-      expect(mockWebSocketManagerInstance.connect).toHaveBeenCalledWith(
+      expect(wsConnectMock).toHaveBeenCalledWith(
         'session=cookie1; refresh=cookie2',
       );
     });
@@ -531,7 +544,7 @@ describe('TradeRepublicApiService', () => {
       mockFetch.mockImplementation(() => {
         callCount++;
         if (callCount === 1) {
-          return Promise.resolve(createMockLoginResponse() as Response);
+          return Promise.resolve(createMockLoginResponse());
         }
         return Promise.resolve(
           createMock2FAResponse([
@@ -545,9 +558,7 @@ describe('TradeRepublicApiService', () => {
       await jest.advanceTimersByTimeAsync(2000);
       await connectPromise;
 
-      expect(mockWebSocketManagerInstance.connect).toHaveBeenCalledWith(
-        'session=valid-cookie',
-      );
+      expect(wsConnectMock).toHaveBeenCalledWith('session=valid-cookie');
     });
 
     it('should ignore cookies with empty name', async () => {
@@ -555,7 +566,7 @@ describe('TradeRepublicApiService', () => {
       mockFetch.mockImplementation(() => {
         callCount++;
         if (callCount === 1) {
-          return Promise.resolve(createMockLoginResponse() as Response);
+          return Promise.resolve(createMockLoginResponse());
         }
         return Promise.resolve(
           createMock2FAResponse([
@@ -569,9 +580,7 @@ describe('TradeRepublicApiService', () => {
       await jest.advanceTimersByTimeAsync(2000);
       await connectPromise;
 
-      expect(mockWebSocketManagerInstance.connect).toHaveBeenCalledWith(
-        'session=valid-cookie',
-      );
+      expect(wsConnectMock).toHaveBeenCalledWith('session=valid-cookie');
     });
 
     it('should parse cookie with expires attribute', async () => {
@@ -580,7 +589,7 @@ describe('TradeRepublicApiService', () => {
       mockFetch.mockImplementation(() => {
         callCount++;
         if (callCount === 1) {
-          return Promise.resolve(createMockLoginResponse() as Response);
+          return Promise.resolve(createMockLoginResponse());
         }
         return Promise.resolve(
           createMock2FAResponse([
@@ -601,7 +610,7 @@ describe('TradeRepublicApiService', () => {
       mockFetch.mockImplementation(() => {
         callCount++;
         if (callCount === 1) {
-          return Promise.resolve(createMockLoginResponse() as Response);
+          return Promise.resolve(createMockLoginResponse());
         }
         return Promise.resolve(
           createMock2FAResponse([
@@ -614,9 +623,7 @@ describe('TradeRepublicApiService', () => {
       await jest.advanceTimersByTimeAsync(2000);
       await connectPromise;
 
-      expect(mockWebSocketManagerInstance.connect).toHaveBeenCalledWith(
-        'session=test-cookie',
-      );
+      expect(wsConnectMock).toHaveBeenCalledWith('session=test-cookie');
     });
 
     it('should connect WebSocket after successful auth', async () => {
@@ -626,7 +633,7 @@ describe('TradeRepublicApiService', () => {
       await jest.advanceTimersByTimeAsync(2000);
       await connectPromise;
 
-      expect(mockWebSocketManagerInstance.connect).toHaveBeenCalled();
+      expect(wsConnectMock).toHaveBeenCalled();
     });
 
     it('should log initialization status', async () => {
@@ -719,7 +726,7 @@ describe('TradeRepublicApiService', () => {
     it('should throw if initialized but not authenticated when validating session', async () => {
       // Create fresh service and trigger login flow (which initializes but doesn't authenticate)
       const freshService = new TradeRepublicApiService(testCredentials);
-      mockFetch.mockResolvedValueOnce(createMockLoginResponse() as Response);
+      mockFetch.mockResolvedValueOnce(createMockLoginResponse());
 
       // subscribeAndWait triggers initialization and login, then throws TwoFactorCodeRequiredException
       const subscribePromise = freshService
@@ -745,12 +752,12 @@ describe('TradeRepublicApiService', () => {
       // Force session to be expired
       await jest.advanceTimersByTimeAsync(300000);
 
-      const mockResponse = {
-        ok: false,
-        status: 401,
-        json: () => Promise.resolve({ message: 'Refresh failed' }),
-      };
-      mockFetch.mockResolvedValue(mockResponse as Response);
+      mockFetch.mockResolvedValue(
+        mockFetchResponse(
+          { message: 'Refresh failed' },
+          { ok: false, status: 401 },
+        ),
+      );
 
       await expect(service.validateSession()).rejects.toThrow('Refresh failed');
     });
@@ -759,12 +766,12 @@ describe('TradeRepublicApiService', () => {
       // Force session to be expired
       await jest.advanceTimersByTimeAsync(300000);
 
-      const mockResponse = {
-        ok: false,
-        status: 401,
-        json: () => Promise.resolve({ errorMessage: 'Refresh error message' }),
-      };
-      mockFetch.mockResolvedValue(mockResponse as Response);
+      mockFetch.mockResolvedValue(
+        mockFetchResponse(
+          { errorMessage: 'Refresh error message' },
+          { ok: false, status: 401 },
+        ),
+      );
 
       await expect(service.validateSession()).rejects.toThrow(
         'Refresh error message',
@@ -775,12 +782,9 @@ describe('TradeRepublicApiService', () => {
       // Force session to be expired
       await jest.advanceTimersByTimeAsync(300000);
 
-      const mockResponse = {
-        ok: false,
-        status: 401,
-        json: () => Promise.resolve({}),
-      };
-      mockFetch.mockResolvedValue(mockResponse as Response);
+      mockFetch.mockResolvedValue(
+        mockFetchResponse({}, { ok: false, status: 401 }),
+      );
 
       await expect(service.validateSession()).rejects.toThrow(
         'Session refresh failed',
@@ -791,12 +795,9 @@ describe('TradeRepublicApiService', () => {
       // Force session to be expired
       await jest.advanceTimersByTimeAsync(300000);
 
-      const mockResponse = {
-        ok: false,
-        status: 401,
-        json: () => Promise.resolve('invalid response'),
-      };
-      mockFetch.mockResolvedValue(mockResponse as Response);
+      mockFetch.mockResolvedValue(
+        mockFetchResponse('invalid response', { ok: false, status: 401 }),
+      );
 
       await expect(service.validateSession()).rejects.toThrow(
         'Session refresh failed',
@@ -1035,7 +1036,7 @@ describe('TradeRepublicApiService', () => {
     it('should unsubscribe from a topic', () => {
       service.unsubscribe(42);
 
-      expect(mockWebSocketManagerInstance.unsubscribe).toHaveBeenCalledWith(42);
+      expect(wsUnsubscribeMock).toHaveBeenCalledWith(42);
     });
   });
 
@@ -1061,12 +1062,9 @@ describe('TradeRepublicApiService', () => {
       });
 
       expect(subId).toBe(42);
-      expect(mockWebSocketManagerInstance.subscribe).toHaveBeenCalledWith(
-        'ticker',
-        {
-          isin: 'DE0007164600',
-        },
-      );
+      expect(wsSubscribeMock).toHaveBeenCalledWith('ticker', {
+        isin: 'DE0007164600',
+      });
     });
 
     it('should subscribe without payload', () => {
@@ -1075,10 +1073,7 @@ describe('TradeRepublicApiService', () => {
       const subId = service.subscribe({ topic: 'portfolio' });
 
       expect(subId).toBe(43);
-      expect(mockWebSocketManagerInstance.subscribe).toHaveBeenCalledWith(
-        'portfolio',
-        undefined,
-      );
+      expect(wsSubscribeMock).toHaveBeenCalledWith('portfolio', undefined);
     });
 
     it('should throw on invalid subscribe input', () => {
@@ -1133,12 +1128,9 @@ describe('TradeRepublicApiService', () => {
 
       const result = await promise;
       expect(result).toEqual({ value: 123 });
-      expect(mockWebSocketManagerInstance.subscribe).toHaveBeenCalledWith(
-        'testTopic',
-        {
-          param: 'value',
-        },
-      );
+      expect(wsSubscribeMock).toHaveBeenCalledWith('testTopic', {
+        param: 'value',
+      });
     });
 
     it('should reject with error on API error response', async () => {
@@ -1201,11 +1193,11 @@ describe('TradeRepublicApiService', () => {
       mockWebSocketManagerInstance.subscribe.mockReturnValue(46);
 
       const promise = service
-        .subscribeAndWait('testTopic', {}, mockSchema, 1000) // 1 second timeout
+        .subscribeAndWait('testTopic', {}, mockSchema)
         .catch((e: unknown) => e as Error);
 
-      // Advance time past timeout
-      await jest.advanceTimersByTimeAsync(1500);
+      // Advance time past timeout (30 seconds default)
+      await jest.advanceTimersByTimeAsync(31_000);
 
       const result = await promise;
       expect(result).toBeInstanceOf(TradeRepublicError);
@@ -1299,7 +1291,7 @@ describe('TradeRepublicApiService', () => {
 
       await promise;
 
-      expect(mockWebSocketManagerInstance.unsubscribe).toHaveBeenCalledWith(50);
+      expect(wsUnsubscribeMock).toHaveBeenCalledWith(50);
     });
 
     it('should ignore errors after already resolved (race condition)', async () => {
@@ -1391,7 +1383,7 @@ describe('TradeRepublicApiService', () => {
 
     it('should throw TwoFactorCodeRequiredException when not authenticated', async () => {
       // Setup mocks for login request (no 2FA)
-      mockFetch.mockResolvedValueOnce(createMockLoginResponse() as Response);
+      mockFetch.mockResolvedValueOnce(createMockLoginResponse());
 
       // Catch the error inline to handle the promise rejection properly
       let caughtError: unknown = null;
@@ -1410,7 +1402,7 @@ describe('TradeRepublicApiService', () => {
 
     it('should include masked phone number in TwoFactorCodeRequiredException', async () => {
       // Setup mocks for login request
-      mockFetch.mockResolvedValueOnce(createMockLoginResponse() as Response);
+      mockFetch.mockResolvedValueOnce(createMockLoginResponse());
 
       let caughtError: unknown = null;
       const promise = service
@@ -1431,7 +1423,7 @@ describe('TradeRepublicApiService', () => {
 
     it('should include error message in TwoFactorCodeRequiredException', async () => {
       // Setup mocks for login request
-      mockFetch.mockResolvedValueOnce(createMockLoginResponse() as Response);
+      mockFetch.mockResolvedValueOnce(createMockLoginResponse());
 
       let caughtError: unknown = null;
       const promise = service
@@ -1452,7 +1444,7 @@ describe('TradeRepublicApiService', () => {
 
     it('should throw TwoFactorCodeRequiredException when awaiting 2FA', async () => {
       // Setup mocks: login succeeds but no 2FA yet
-      mockFetch.mockResolvedValueOnce(createMockLoginResponse() as Response);
+      mockFetch.mockResolvedValueOnce(createMockLoginResponse());
 
       // First call initiates login and throws TwoFactorCodeRequiredException
       let error1: unknown = null;
@@ -1521,7 +1513,7 @@ describe('TradeRepublicApiService', () => {
 
     it('should return success message when 2FA verification succeeds', async () => {
       // First, trigger login to get to AWAITING_2FA state
-      mockFetch.mockResolvedValueOnce(createMockLoginResponse() as Response);
+      mockFetch.mockResolvedValueOnce(createMockLoginResponse());
       const subscribePromise = service
         .subscribeAndWait(
           'testTopic',
@@ -1551,7 +1543,7 @@ describe('TradeRepublicApiService', () => {
 
     it('should return error message when 2FA verification fails', async () => {
       // First, trigger login to get to AWAITING_2FA state
-      mockFetch.mockResolvedValueOnce(createMockLoginResponse() as Response);
+      mockFetch.mockResolvedValueOnce(createMockLoginResponse());
       const subscribePromise = service
         .subscribeAndWait(
           'testTopic',
@@ -1620,7 +1612,7 @@ describe('TradeRepublicApiService', () => {
 
       service.disconnect();
 
-      expect(mockWebSocketManagerInstance.disconnect).toHaveBeenCalled();
+      expect(wsDisconnectMock).toHaveBeenCalled();
       expect(service.getAuthStatus()).toBe(AuthStatus.UNAUTHENTICATED);
       jest.useRealTimers();
     });
@@ -1758,7 +1750,7 @@ describe('TradeRepublicApiService', () => {
 
         // First call: login response
         if (callIndex === 1) {
-          return Promise.resolve(createMockLoginResponse() as Response);
+          return Promise.resolve(createMockLoginResponse());
         }
 
         // Second call: 2FA response with cookies
@@ -1863,7 +1855,7 @@ describe('TradeRepublicApiService', () => {
 
         // First call: login response
         if (callCount === 1) {
-          return Promise.resolve(createMockLoginResponse() as Response);
+          return Promise.resolve(createMockLoginResponse());
         }
 
         // Second call: 2FA response with cookies
@@ -1954,7 +1946,7 @@ describe('TradeRepublicApiService', () => {
           } as Response);
         }
         if (callCount === 2) {
-          return Promise.resolve(createMockLoginResponse() as Response);
+          return Promise.resolve(createMockLoginResponse());
         }
         return Promise.resolve(
           createMock2FAResponse([
@@ -2025,7 +2017,7 @@ describe('TradeRepublicApiService', () => {
           return Promise.reject(error);
         }
         if (callCount === 2) {
-          return Promise.resolve(createMockLoginResponse() as Response);
+          return Promise.resolve(createMockLoginResponse());
         }
         return Promise.resolve(
           createMock2FAResponse([
@@ -2054,7 +2046,7 @@ describe('TradeRepublicApiService', () => {
           } as Response);
         }
         if (callCount === 2) {
-          return Promise.resolve(createMockLoginResponse() as Response);
+          return Promise.resolve(createMockLoginResponse());
         }
         return Promise.resolve(
           createMock2FAResponse([
@@ -2083,7 +2075,7 @@ describe('TradeRepublicApiService', () => {
           } as Response);
         }
         if (callCount === 3) {
-          return Promise.resolve(createMockLoginResponse() as Response);
+          return Promise.resolve(createMockLoginResponse());
         }
         return Promise.resolve(
           createMock2FAResponse([
@@ -2112,7 +2104,7 @@ describe('TradeRepublicApiService', () => {
         callCount++;
         // First call: login success
         if (callCount === 1) {
-          return Promise.resolve(createMockLoginResponse() as Response);
+          return Promise.resolve(createMockLoginResponse());
         }
         // Second call: 2FA 503 error
         if (callCount === 2) {
@@ -2196,7 +2188,7 @@ describe('TradeRepublicApiService', () => {
           return Promise.reject(error);
         }
         if (callCount === 2) {
-          return Promise.resolve(createMockLoginResponse() as Response);
+          return Promise.resolve(createMockLoginResponse());
         }
         return Promise.resolve(
           createMock2FAResponse([

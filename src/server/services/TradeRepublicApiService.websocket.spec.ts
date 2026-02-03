@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method */
 import {
   describe,
   it,
@@ -36,12 +35,32 @@ interface MockWebSocket extends WebSocket {
 
 let mockWs: MockWebSocket;
 
+// Standalone mock functions to avoid unbound-method lint errors
+const wsSendMock = jest.fn();
+const wsCloseMock = jest.fn();
+let addEventListenerMock =
+  jest.fn<(event: string, listener: (event: unknown) => void) => void>();
+let removeEventListenerMock =
+  jest.fn<(event: string, listener: (...args: unknown[]) => void) => void>();
+
 /**
  * Creates a mock WebSocket for testing with addEventListener API
  */
 function createMockWebSocket(): MockWebSocket {
   const emitter = new EventEmitter();
   let readyStateValue = 0;
+
+  addEventListenerMock = jest.fn(
+    (event: string, listener: (event: unknown) => void) => {
+      emitter.on(event, listener);
+    },
+  );
+
+  removeEventListenerMock = jest.fn(
+    (event: string, listener: (...args: unknown[]) => void) => {
+      emitter.off(event, listener);
+    },
+  );
 
   const ws: MockWebSocket = {
     _readyState: 0,
@@ -56,18 +75,12 @@ function createMockWebSocket(): MockWebSocket {
     CLOSED: 3,
     CONNECTING: 0,
     CLOSING: 2,
-    send: jest.fn(),
-    close: jest.fn(),
-    addEventListener: jest.fn(
-      (event: string, listener: (event: unknown) => void) => {
-        emitter.on(event, listener);
-      },
-    ) as unknown as MockWebSocket['addEventListener'],
-    removeEventListener: jest.fn(
-      (event: string, listener: (...args: unknown[]) => void) => {
-        emitter.off(event, listener);
-      },
-    ) as unknown as MockWebSocket['removeEventListener'],
+    send: wsSendMock,
+    close: wsCloseMock,
+    addEventListener:
+      addEventListenerMock as unknown as MockWebSocket['addEventListener'],
+    removeEventListener:
+      removeEventListenerMock as unknown as MockWebSocket['removeEventListener'],
     emit: (event: string, eventData?: unknown) =>
       emitter.emit(event, eventData),
   };
@@ -123,6 +136,8 @@ describe('WebSocketManager', () => {
   let wsManager: WebSocketManager;
 
   beforeEach(() => {
+    wsSendMock.mockClear();
+    wsCloseMock.mockClear();
     mockWs = createMockWebSocket();
     MockedWebSocket.mockClear();
     wsManager = new WebSocketManager();
@@ -182,11 +197,11 @@ describe('WebSocketManager', () => {
 
       await connectPromise;
 
-      expect(mockWs.send).toHaveBeenCalledWith(
+      expect(wsSendMock).toHaveBeenCalledWith(
         expect.stringContaining('connect 31'),
       );
       // Verify sessionToken is NOT in the connect message
-      const sendCalls = (mockWs.send as jest.Mock).mock.calls as string[][];
+      const sendCalls = wsSendMock.mock.calls as string[][];
       const connectMessage = sendCalls
         .map((call) => call[0])
         .find((msg) => msg.includes('connect 31'));
@@ -249,7 +264,7 @@ describe('WebSocketManager', () => {
 
       wsManager.disconnect();
 
-      expect(mockWs.close).toHaveBeenCalled();
+      expect(wsCloseMock).toHaveBeenCalled();
       expect(wsManager.getStatus()).toBe(ConnectionStatus.DISCONNECTED);
     });
 
@@ -261,19 +276,19 @@ describe('WebSocketManager', () => {
 
       wsManager.disconnect();
 
-      expect(mockWs.removeEventListener).toHaveBeenCalledWith(
+      expect(removeEventListenerMock).toHaveBeenCalledWith(
         'open',
         expect.any(Function),
       );
-      expect(mockWs.removeEventListener).toHaveBeenCalledWith(
+      expect(removeEventListenerMock).toHaveBeenCalledWith(
         'message',
         expect.any(Function),
       );
-      expect(mockWs.removeEventListener).toHaveBeenCalledWith(
+      expect(removeEventListenerMock).toHaveBeenCalledWith(
         'error',
         expect.any(Function),
       );
-      expect(mockWs.removeEventListener).toHaveBeenCalledWith(
+      expect(removeEventListenerMock).toHaveBeenCalledWith(
         'close',
         expect.any(Function),
       );
@@ -318,7 +333,7 @@ describe('WebSocketManager', () => {
       const subId = wsManager.subscribe('ticker', { isin: 'DE0007164600' });
 
       expect(typeof subId).toBe('number');
-      expect(mockWs.send).toHaveBeenCalledWith(
+      expect(wsSendMock).toHaveBeenCalledWith(
         expect.stringContaining(`sub ${subId}`),
       );
     });
@@ -333,7 +348,7 @@ describe('WebSocketManager', () => {
     it('should include topic in subscription message', () => {
       wsManager.subscribe('timeline');
 
-      expect(mockWs.send).toHaveBeenCalledWith(
+      expect(wsSendMock).toHaveBeenCalledWith(
         expect.stringContaining('"type":"timeline"'),
       );
     });
@@ -341,7 +356,7 @@ describe('WebSocketManager', () => {
     it('should include payload in subscription message', () => {
       wsManager.subscribe('instrument', { isin: 'DE0007164600' });
 
-      expect(mockWs.send).toHaveBeenCalledWith(
+      expect(wsSendMock).toHaveBeenCalledWith(
         expect.stringContaining('"isin":"DE0007164600"'),
       );
     });
@@ -359,7 +374,7 @@ describe('WebSocketManager', () => {
       const subId = wsManager.subscribe('ticker');
       wsManager.unsubscribe(subId);
 
-      expect(mockWs.send).toHaveBeenCalledWith(`unsub ${subId}`);
+      expect(wsSendMock).toHaveBeenCalledWith(`unsub ${subId}`);
     });
   });
 
@@ -1120,9 +1135,7 @@ describe('WebSocketManager', () => {
       await Promise.resolve();
 
       // Verify subscriptions were restored
-      const sendCalls = (newMockWs.send as jest.Mock).mock.calls.map(
-        (call) => call[0] as string,
-      );
+      const sendCalls = wsSendMock.mock.calls.map((call) => call[0] as string);
 
       // Should have connect message plus resubscriptions
       expect(sendCalls).toContainEqual(expect.stringContaining('connect 31'));
@@ -1371,6 +1384,9 @@ describe('WebSocketManager', () => {
       const newMockWs = createMockWebSocket();
       mockWs = newMockWs;
 
+      // Clear mock to only track reconnection calls
+      wsSendMock.mockClear();
+
       // Simulate unexpected close
       emitClose(oldMockWs, 1006, 'Abnormal closure');
 
@@ -1386,10 +1402,8 @@ describe('WebSocketManager', () => {
       await Promise.resolve();
       await Promise.resolve();
 
-      // Verify only portfolio was resubscribed
-      const sendCalls = (newMockWs.send as jest.Mock).mock.calls.map(
-        (call) => call[0] as string,
-      );
+      // Verify only portfolio was resubscribed (after reconnection)
+      const sendCalls = wsSendMock.mock.calls.map((call) => call[0] as string);
 
       expect(sendCalls).toContainEqual(
         expect.stringContaining('"type":"portfolio"'),
@@ -1420,6 +1434,9 @@ describe('WebSocketManager', () => {
       const newMockWs = createMockWebSocket();
       mockWs = newMockWs;
 
+      // Clear mock to only track new connection calls
+      wsSendMock.mockClear();
+
       // Manually reconnect
       const reconnectPromise = wsManager.connect('session=test-cookie');
       newMockWs.setReadyState(newMockWs.OPEN);
@@ -1427,9 +1444,7 @@ describe('WebSocketManager', () => {
       await reconnectPromise;
 
       // Verify no subscriptions were restored (only connect message)
-      const sendCalls = (newMockWs.send as jest.Mock).mock.calls.map(
-        (call) => call[0] as string,
-      );
+      const sendCalls = wsSendMock.mock.calls.map((call) => call[0] as string);
 
       const subCalls = sendCalls.filter((call) => call.startsWith('sub '));
       expect(subCalls).toHaveLength(0);

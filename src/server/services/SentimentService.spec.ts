@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method */
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 
 import { mockLogger } from '@test/loggerMock';
@@ -20,16 +19,20 @@ import { SentimentServiceError } from './SentimentService.types';
 import { GetSentimentRequestSchema } from './SentimentService.request';
 import type { NewsService } from './NewsService';
 
+// Standalone mock functions to avoid unbound-method lint errors
+const getNewsMock = jest.fn<NewsService['getNews']>();
+
 describe('SentimentService', () => {
   let service: SentimentService;
-  let mockNewsService: jest.Mocked<NewsService>;
+  let mockNewsService: NewsService;
 
   beforeEach(() => {
     mockAnalyze.mockReset();
+    getNewsMock.mockReset();
 
     mockNewsService = {
-      getNews: jest.fn(),
-    } as unknown as jest.Mocked<NewsService>;
+      getNews: getNewsMock,
+    } as unknown as NewsService;
 
     service = new SentimentService(mockNewsService);
   });
@@ -100,7 +103,7 @@ describe('SentimentService', () => {
 
   describe('getSentiment with isin', () => {
     it('should analyze news for ISIN', async () => {
-      mockNewsService.getNews.mockResolvedValue({
+      getNewsMock.mockResolvedValue({
         isin: 'US0378331005',
         symbol: 'AAPL',
         articles: [
@@ -130,7 +133,7 @@ describe('SentimentService', () => {
     });
 
     it('should call newsService with ISIN and default limit', async () => {
-      mockNewsService.getNews.mockResolvedValue({
+      getNewsMock.mockResolvedValue({
         isin: 'US0378331005',
         symbol: 'AAPL',
         articles: [],
@@ -140,14 +143,14 @@ describe('SentimentService', () => {
 
       await service.getSentiment({ isin: 'US0378331005' });
 
-      expect(mockNewsService.getNews).toHaveBeenCalledWith({
+      expect(getNewsMock).toHaveBeenCalledWith({
         isin: 'US0378331005',
         limit: 5,
       });
     });
 
     it('should call newsService with custom limit', async () => {
-      mockNewsService.getNews.mockResolvedValue({
+      getNewsMock.mockResolvedValue({
         isin: 'US0378331005',
         symbol: 'AAPL',
         articles: [],
@@ -157,14 +160,14 @@ describe('SentimentService', () => {
 
       await service.getSentiment({ isin: 'US0378331005', newsLimit: 10 });
 
-      expect(mockNewsService.getNews).toHaveBeenCalledWith({
+      expect(getNewsMock).toHaveBeenCalledWith({
         isin: 'US0378331005',
         limit: 10,
       });
     });
 
     it('should handle empty news results', async () => {
-      mockNewsService.getNews.mockResolvedValue({
+      getNewsMock.mockResolvedValue({
         isin: 'US0378331005',
         symbol: 'AAPL',
         articles: [],
@@ -180,7 +183,7 @@ describe('SentimentService', () => {
     });
 
     it('should throw SentimentServiceError when newsService fails', async () => {
-      mockNewsService.getNews.mockRejectedValue(new Error('Network error'));
+      getNewsMock.mockRejectedValue(new Error('Network error'));
 
       await expect(
         service.getSentiment({ isin: 'US0378331005' }),
@@ -299,7 +302,7 @@ describe('SentimentService', () => {
     });
 
     it('should average scores for multiple texts', async () => {
-      mockNewsService.getNews.mockResolvedValue({
+      getNewsMock.mockResolvedValue({
         isin: 'US0378331005',
         symbol: 'AAPL',
         articles: [
@@ -383,7 +386,7 @@ describe('SentimentService', () => {
 
   describe('confidence calculation', () => {
     it('should return high confidence for agreement >= 75% and intensity > 3', async () => {
-      mockNewsService.getNews.mockResolvedValue({
+      getNewsMock.mockResolvedValue({
         isin: 'US0378331005',
         symbol: 'AAPL',
         articles: [
@@ -429,7 +432,7 @@ describe('SentimentService', () => {
     });
 
     it('should return medium confidence for agreement >= 50% and intensity > 1', async () => {
-      mockNewsService.getNews.mockResolvedValue({
+      getNewsMock.mockResolvedValue({
         isin: 'US0378331005',
         symbol: 'AAPL',
         articles: [
@@ -470,7 +473,7 @@ describe('SentimentService', () => {
     });
 
     it('should return low confidence for mixed signals', async () => {
-      mockNewsService.getNews.mockResolvedValue({
+      getNewsMock.mockResolvedValue({
         isin: 'US0378331005',
         symbol: 'AAPL',
         articles: [
@@ -524,7 +527,7 @@ describe('SentimentService', () => {
     });
 
     it('should return low confidence for empty analysis', async () => {
-      mockNewsService.getNews.mockResolvedValue({
+      getNewsMock.mockResolvedValue({
         isin: 'US0378331005',
         symbol: 'AAPL',
         articles: [],
@@ -579,7 +582,7 @@ describe('SentimentService', () => {
     });
 
     it('should include article count for ISIN analysis', async () => {
-      mockNewsService.getNews.mockResolvedValue({
+      getNewsMock.mockResolvedValue({
         isin: 'US0378331005',
         symbol: 'AAPL',
         articles: [
@@ -632,7 +635,7 @@ describe('SentimentService', () => {
 
   describe('error handling', () => {
     it('should handle non-Error thrown from newsService', async () => {
-      mockNewsService.getNews.mockRejectedValue('String error');
+      getNewsMock.mockRejectedValue('String error');
 
       await expect(
         service.getSentiment({ isin: 'US0378331005' }),

@@ -8,6 +8,7 @@ import {
 } from '@jest/globals';
 
 import { mockLogger } from '@test/loggerMock';
+import { mockTradeRepublicApiService } from '@test/serviceMocks';
 
 const logger = mockLogger();
 jest.mock('../../logger', () => ({
@@ -48,25 +49,6 @@ import {
 // Type for captured message handlers
 type MessageHandler = (message: WebSocketMessage) => void;
 
-// Mock API service type
-interface MockedApiService {
-  subscribe: jest.MockedFunction<TradeRepublicApiService['subscribe']>;
-  unsubscribe: jest.MockedFunction<TradeRepublicApiService['unsubscribe']>;
-  onMessage: jest.MockedFunction<TradeRepublicApiService['onMessage']>;
-  offMessage: jest.MockedFunction<TradeRepublicApiService['offMessage']>;
-  getAuthStatus: jest.MockedFunction<TradeRepublicApiService['getAuthStatus']>;
-}
-
-function createMockApiService(): MockedApiService {
-  return {
-    subscribe: jest.fn<TradeRepublicApiService['subscribe']>(),
-    unsubscribe: jest.fn<TradeRepublicApiService['unsubscribe']>(),
-    onMessage: jest.fn<TradeRepublicApiService['onMessage']>(),
-    offMessage: jest.fn<TradeRepublicApiService['offMessage']>(),
-    getAuthStatus: jest.fn<TradeRepublicApiService['getAuthStatus']>(),
-  };
-}
-
 /**
  * Creates a ticker API response matching Trade Republic format.
  */
@@ -87,7 +69,6 @@ function createTickerApiResponse(
 }
 
 describe('MarketEventService', () => {
-  let mockApi: MockedApiService;
   let service: MarketEventService;
   let capturedMessageHandler: MessageHandler | null;
   let subscriptionIdCounter: number;
@@ -131,20 +112,22 @@ describe('MarketEventService', () => {
 
   beforeEach(() => {
     jest.useFakeTimers();
-    mockApi = createMockApiService();
+    jest.clearAllMocks();
     service = new MarketEventService(
-      mockApi as unknown as TradeRepublicApiService,
+      mockTradeRepublicApiService as unknown as TradeRepublicApiService,
     );
     capturedMessageHandler = null;
     subscriptionIdCounter = 1;
 
     // Capture the message handler when onMessage is called
-    mockApi.onMessage.mockImplementation((handler: MessageHandler) => {
-      capturedMessageHandler = handler;
-    });
+    mockTradeRepublicApiService.onMessage.mockImplementation(
+      (handler: MessageHandler) => {
+        capturedMessageHandler = handler;
+      },
+    );
 
     // Return incrementing subscription IDs
-    mockApi.subscribe.mockImplementation(() => {
+    mockTradeRepublicApiService.subscribe.mockImplementation(() => {
       return subscriptionIdCounter++;
     });
   });
@@ -188,7 +171,7 @@ describe('MarketEventService', () => {
         expect(timeout.duration).toBe(5);
         expect(timeout.lastTickers['DE0007164600.LSX']).toBeDefined();
         expect(timeout.lastTickers['DE0007164600.LSX'].bid).toBe(100);
-        expect(mockApi.unsubscribe).toHaveBeenCalledWith(1);
+        expect(mockTradeRepublicApiService.unsubscribe).toHaveBeenCalledWith(1);
       });
 
       it('should use default timeout of 55 seconds', async () => {
@@ -294,7 +277,7 @@ describe('MarketEventService', () => {
         expect(triggered.triggeredConditions[0].threshold).toBe(65);
         expect(triggered.triggeredConditions[0].actualValue).toBe(66);
         expect(triggered.ticker.bid).toBe(66);
-        expect(mockApi.unsubscribe).toHaveBeenCalledWith(1);
+        expect(mockTradeRepublicApiService.unsubscribe).toHaveBeenCalledWith(1);
       });
 
       it('should trigger on GTE condition', async () => {
@@ -775,12 +758,12 @@ describe('MarketEventService', () => {
 
         await resultPromise;
 
-        expect(mockApi.subscribe).toHaveBeenCalledTimes(2);
-        expect(mockApi.subscribe).toHaveBeenCalledWith({
+        expect(mockTradeRepublicApiService.subscribe).toHaveBeenCalledTimes(2);
+        expect(mockTradeRepublicApiService.subscribe).toHaveBeenCalledWith({
           topic: 'ticker',
           payload: { id: 'DE0007164600.LSX' },
         });
-        expect(mockApi.subscribe).toHaveBeenCalledWith({
+        expect(mockTradeRepublicApiService.subscribe).toHaveBeenCalledWith({
           topic: 'ticker',
           payload: { id: 'US0378331005.LSX' },
         });
@@ -1205,9 +1188,9 @@ describe('MarketEventService', () => {
         await resultPromise;
 
         // Both subscriptions should be unsubscribed
-        expect(mockApi.unsubscribe).toHaveBeenCalledWith(1);
-        expect(mockApi.unsubscribe).toHaveBeenCalledWith(2);
-        expect(mockApi.offMessage).toHaveBeenCalled();
+        expect(mockTradeRepublicApiService.unsubscribe).toHaveBeenCalledWith(1);
+        expect(mockTradeRepublicApiService.unsubscribe).toHaveBeenCalledWith(2);
+        expect(mockTradeRepublicApiService.offMessage).toHaveBeenCalled();
       });
 
       it('should cleanup subscriptions after timeout', async () => {
@@ -1246,9 +1229,9 @@ describe('MarketEventService', () => {
         await resultPromise;
 
         // Both subscriptions should be unsubscribed
-        expect(mockApi.unsubscribe).toHaveBeenCalledWith(1);
-        expect(mockApi.unsubscribe).toHaveBeenCalledWith(2);
-        expect(mockApi.offMessage).toHaveBeenCalled();
+        expect(mockTradeRepublicApiService.unsubscribe).toHaveBeenCalledWith(1);
+        expect(mockTradeRepublicApiService.unsubscribe).toHaveBeenCalledWith(2);
+        expect(mockTradeRepublicApiService.offMessage).toHaveBeenCalled();
       });
     });
 
@@ -1278,7 +1261,7 @@ describe('MarketEventService', () => {
 
         await resultPromise;
 
-        expect(mockApi.subscribe).toHaveBeenCalledWith({
+        expect(mockTradeRepublicApiService.subscribe).toHaveBeenCalledWith({
           topic: 'ticker',
           payload: { id: 'DE0007164600.XETR' },
         });

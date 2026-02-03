@@ -37,16 +37,12 @@ import {
   type MarketStatus,
 } from './MarketDataService.response';
 
-const DEFAULT_SUBSCRIPTION_TIMEOUT_MS = 30_000;
 const DEFAULT_WAIT_TIMEOUT_MS = 60_000;
 const DEFAULT_POLL_INTERVAL_MS = 5_000;
 const DEFAULT_SEARCH_LIMIT = 10;
 
 export class MarketDataService {
-  constructor(
-    private readonly api: TradeRepublicApiService,
-    private readonly timeoutMs: number = DEFAULT_SUBSCRIPTION_TIMEOUT_MS,
-  ) {}
+  constructor(private readonly api: TradeRepublicApiService) {}
 
   /**
    * Get current price for an instrument.
@@ -62,7 +58,6 @@ export class MarketDataService {
       'ticker',
       { id: tickerId },
       TickerApiResponseSchema,
-      this.timeoutMs,
     );
 
     const bid = tickerData.bid.price;
@@ -102,7 +97,6 @@ export class MarketDataService {
       'aggregateHistory',
       { id: tickerId, range: request.range },
       AggregateHistoryApiSchema,
-      this.timeoutMs,
     );
 
     return {
@@ -138,7 +132,6 @@ export class MarketDataService {
       'ticker',
       { id: tickerId },
       TickerApiResponseSchema,
-      this.timeoutMs,
     );
 
     const bidPrice = tickerData.bid.price;
@@ -172,7 +165,6 @@ export class MarketDataService {
       'neonSearch',
       { data: { q: request.query } },
       NeonSearchApiSchema,
-      this.timeoutMs,
     );
 
     const totalCount = searchData.results.length;
@@ -203,7 +195,6 @@ export class MarketDataService {
       'instrument',
       { id: request.isin },
       InstrumentApiSchema,
-      this.timeoutMs,
     );
 
     return {
@@ -245,7 +236,6 @@ export class MarketDataService {
       'ticker',
       { id: tickerId },
       TickerApiResponseSchema,
-      this.timeoutMs,
     );
 
     const hasBid = tickerData.bid.price > 0;

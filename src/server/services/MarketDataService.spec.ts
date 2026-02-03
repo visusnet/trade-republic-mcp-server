@@ -1,7 +1,7 @@
-/* eslint-disable @typescript-eslint/unbound-method */
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 
 import { mockLogger } from '@test/loggerMock';
+import { mockTradeRepublicApiService } from '@test/serviceMocks';
 
 const logger = mockLogger();
 jest.mock('../../logger', () => ({
@@ -20,27 +20,6 @@ import {
   NeonSearchApiSchema,
   InstrumentApiSchema,
 } from './MarketDataService.response';
-
-/**
- * Creates a mock TradeRepublicApiService for testing.
- */
-function createMockApiService(): jest.Mocked<TradeRepublicApiService> {
-  return {
-    getAuthStatus: jest
-      .fn<() => AuthStatus>()
-      .mockReturnValue(AuthStatus.AUTHENTICATED),
-    subscribeAndWait: jest
-      .fn<
-        <T>(
-          topic: string,
-          payload: Record<string, unknown>,
-          schema: { safeParse: (data: unknown) => unknown },
-          timeoutMs?: number,
-        ) => Promise<T>
-      >()
-      .mockResolvedValue({} as never),
-  } as unknown as jest.Mocked<TradeRepublicApiService>;
-}
 
 describe('MarketDataService.response', () => {
   describe('TickerApiResponseSchema', () => {
@@ -71,13 +50,16 @@ describe('MarketDataService.response', () => {
 });
 
 describe('MarketDataService', () => {
-  let mockApi: jest.Mocked<TradeRepublicApiService>;
   let service: MarketDataService;
-  const CUSTOM_TIMEOUT = 5000;
 
   beforeEach(() => {
-    mockApi = createMockApiService();
-    service = new MarketDataService(mockApi, CUSTOM_TIMEOUT);
+    jest.clearAllMocks();
+    mockTradeRepublicApiService.getAuthStatus.mockReturnValue(
+      AuthStatus.AUTHENTICATED,
+    );
+    service = new MarketDataService(
+      mockTradeRepublicApiService as unknown as TradeRepublicApiService,
+    );
   });
 
   // ==========================================================================
@@ -85,7 +67,9 @@ describe('MarketDataService', () => {
   // ==========================================================================
   describe('getPrice', () => {
     it('should throw if not authenticated', async () => {
-      mockApi.getAuthStatus.mockReturnValue(AuthStatus.UNAUTHENTICATED);
+      mockTradeRepublicApiService.getAuthStatus.mockReturnValue(
+        AuthStatus.UNAUTHENTICATED,
+      );
 
       await expect(service.getPrice({ isin: 'DE0007164600' })).rejects.toThrow(
         TradeRepublicError,
@@ -101,15 +85,16 @@ describe('MarketDataService', () => {
         ask: { price: 100.6, size: 500 },
         last: { price: 100.55 },
       };
-      mockApi.subscribeAndWait.mockResolvedValue(tickerData);
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue(
+        tickerData,
+      );
 
       await service.getPrice({ isin: 'DE0007164600' });
 
-      expect(mockApi.subscribeAndWait).toHaveBeenCalledWith(
+      expect(mockTradeRepublicApiService.subscribeAndWait).toHaveBeenCalledWith(
         'ticker',
         { id: 'DE0007164600.LSX' },
         TickerApiResponseSchema,
-        CUSTOM_TIMEOUT,
       );
     });
 
@@ -118,15 +103,16 @@ describe('MarketDataService', () => {
         bid: { price: 100.5, size: 1000 },
         ask: { price: 100.6, size: 500 },
       };
-      mockApi.subscribeAndWait.mockResolvedValue(tickerData);
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue(
+        tickerData,
+      );
 
       await service.getPrice({ isin: 'DE0007164600', exchange: 'XETRA' });
 
-      expect(mockApi.subscribeAndWait).toHaveBeenCalledWith(
+      expect(mockTradeRepublicApiService.subscribeAndWait).toHaveBeenCalledWith(
         'ticker',
         { id: 'DE0007164600.XETRA' },
         TickerApiResponseSchema,
-        CUSTOM_TIMEOUT,
       );
     });
 
@@ -136,7 +122,9 @@ describe('MarketDataService', () => {
         ask: { price: 101, size: 500 },
         last: { price: 100.5 },
       };
-      mockApi.subscribeAndWait.mockResolvedValue(tickerData);
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue(
+        tickerData,
+      );
 
       const result = await service.getPrice({ isin: 'DE0007164600' });
 
@@ -155,7 +143,9 @@ describe('MarketDataService', () => {
         bid: { price: 0, size: 0 },
         ask: { price: 0, size: 0 },
       };
-      mockApi.subscribeAndWait.mockResolvedValue(tickerData);
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue(
+        tickerData,
+      );
 
       const result = await service.getPrice({ isin: 'DE0007164600' });
 
@@ -165,7 +155,7 @@ describe('MarketDataService', () => {
     });
 
     it('should propagate errors from subscribeAndWait', async () => {
-      mockApi.subscribeAndWait.mockRejectedValue(
+      mockTradeRepublicApiService.subscribeAndWait.mockRejectedValue(
         new TradeRepublicError('ticker request timed out'),
       );
 
@@ -175,7 +165,7 @@ describe('MarketDataService', () => {
     });
 
     it('should log the request', async () => {
-      mockApi.subscribeAndWait.mockResolvedValue({
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue({
         bid: { price: 100 },
         ask: { price: 101 },
       });
@@ -194,7 +184,9 @@ describe('MarketDataService', () => {
   // ==========================================================================
   describe('getPriceHistory', () => {
     it('should throw if not authenticated', async () => {
-      mockApi.getAuthStatus.mockReturnValue(AuthStatus.UNAUTHENTICATED);
+      mockTradeRepublicApiService.getAuthStatus.mockReturnValue(
+        AuthStatus.UNAUTHENTICATED,
+      );
 
       await expect(
         service.getPriceHistory({ isin: 'DE0007164600', range: '1d' }),
@@ -206,15 +198,16 @@ describe('MarketDataService', () => {
         aggregates: [],
         resolution: 60,
       };
-      mockApi.subscribeAndWait.mockResolvedValue(historyData);
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue(
+        historyData,
+      );
 
       await service.getPriceHistory({ isin: 'DE0007164600', range: '1m' });
 
-      expect(mockApi.subscribeAndWait).toHaveBeenCalledWith(
+      expect(mockTradeRepublicApiService.subscribeAndWait).toHaveBeenCalledWith(
         'aggregateHistory',
         { id: 'DE0007164600.LSX', range: '1m' },
         AggregateHistoryApiSchema,
-        CUSTOM_TIMEOUT,
       );
     });
 
@@ -232,7 +225,9 @@ describe('MarketDataService', () => {
         ],
         resolution: 3600,
       };
-      mockApi.subscribeAndWait.mockResolvedValue(historyData);
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue(
+        historyData,
+      );
 
       const result = await service.getPriceHistory({
         isin: 'DE0007164600',
@@ -260,7 +255,9 @@ describe('MarketDataService', () => {
   // ==========================================================================
   describe('getOrderBook', () => {
     it('should throw if not authenticated', async () => {
-      mockApi.getAuthStatus.mockReturnValue(AuthStatus.UNAUTHENTICATED);
+      mockTradeRepublicApiService.getAuthStatus.mockReturnValue(
+        AuthStatus.UNAUTHENTICATED,
+      );
 
       await expect(
         service.getOrderBook({ isin: 'DE0007164600' }),
@@ -272,15 +269,16 @@ describe('MarketDataService', () => {
         bid: { price: 100.5, size: 1000 },
         ask: { price: 100.6, size: 500 },
       };
-      mockApi.subscribeAndWait.mockResolvedValue(tickerData);
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue(
+        tickerData,
+      );
 
       await service.getOrderBook({ isin: 'DE0007164600' });
 
-      expect(mockApi.subscribeAndWait).toHaveBeenCalledWith(
+      expect(mockTradeRepublicApiService.subscribeAndWait).toHaveBeenCalledWith(
         'ticker',
         { id: 'DE0007164600.LSX' },
         TickerApiResponseSchema,
-        CUSTOM_TIMEOUT,
       );
     });
 
@@ -289,7 +287,9 @@ describe('MarketDataService', () => {
         bid: { price: 100, size: 1000 },
         ask: { price: 101, size: 500 },
       };
-      mockApi.subscribeAndWait.mockResolvedValue(tickerData);
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue(
+        tickerData,
+      );
 
       const result = await service.getOrderBook({ isin: 'DE0007164600' });
 
@@ -308,7 +308,9 @@ describe('MarketDataService', () => {
   // ==========================================================================
   describe('searchAssets', () => {
     it('should throw if not authenticated', async () => {
-      mockApi.getAuthStatus.mockReturnValue(AuthStatus.UNAUTHENTICATED);
+      mockTradeRepublicApiService.getAuthStatus.mockReturnValue(
+        AuthStatus.UNAUTHENTICATED,
+      );
 
       await expect(service.searchAssets({ query: 'apple' })).rejects.toThrow(
         TradeRepublicError,
@@ -317,15 +319,16 @@ describe('MarketDataService', () => {
 
     it('should call subscribeAndWait with correct parameters', async () => {
       const searchData = { results: [] };
-      mockApi.subscribeAndWait.mockResolvedValue(searchData);
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue(
+        searchData,
+      );
 
       await service.searchAssets({ query: 'apple' });
 
-      expect(mockApi.subscribeAndWait).toHaveBeenCalledWith(
+      expect(mockTradeRepublicApiService.subscribeAndWait).toHaveBeenCalledWith(
         'neonSearch',
         { data: { q: 'apple' } },
         NeonSearchApiSchema,
-        CUSTOM_TIMEOUT,
       );
     });
 
@@ -340,7 +343,9 @@ describe('MarketDataService', () => {
           },
         ],
       };
-      mockApi.subscribeAndWait.mockResolvedValue(searchData);
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue(
+        searchData,
+      );
 
       const result = await service.searchAssets({ query: 'apple' });
 
@@ -358,7 +363,9 @@ describe('MarketDataService', () => {
           { isin: 'ISIN3', name: 'Result 3', type: 'stock', tags: [] },
         ],
       };
-      mockApi.subscribeAndWait.mockResolvedValue(searchData);
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue(
+        searchData,
+      );
 
       const result = await service.searchAssets({ query: 'test', limit: 2 });
 
@@ -372,7 +379,9 @@ describe('MarketDataService', () => {
   // ==========================================================================
   describe('getAssetInfo', () => {
     it('should throw if not authenticated', async () => {
-      mockApi.getAuthStatus.mockReturnValue(AuthStatus.UNAUTHENTICATED);
+      mockTradeRepublicApiService.getAuthStatus.mockReturnValue(
+        AuthStatus.UNAUTHENTICATED,
+      );
 
       await expect(
         service.getAssetInfo({ isin: 'DE0007164600' }),
@@ -387,15 +396,16 @@ describe('MarketDataService', () => {
         typeId: 'stock',
         wkn: '716460',
       };
-      mockApi.subscribeAndWait.mockResolvedValue(instrumentData);
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue(
+        instrumentData,
+      );
 
       await service.getAssetInfo({ isin: 'DE0007164600' });
 
-      expect(mockApi.subscribeAndWait).toHaveBeenCalledWith(
+      expect(mockTradeRepublicApiService.subscribeAndWait).toHaveBeenCalledWith(
         'instrument',
         { id: 'DE0007164600' },
         InstrumentApiSchema,
-        CUSTOM_TIMEOUT,
       );
     });
 
@@ -416,7 +426,9 @@ describe('MarketDataService', () => {
         exchanges: [{ exchangeId: 'LSX', name: 'Lang & Schwarz' }],
         tags: [{ name: 'Tech' }],
       };
-      mockApi.subscribeAndWait.mockResolvedValue(instrumentData);
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue(
+        instrumentData,
+      );
 
       const result = await service.getAssetInfo({ isin: 'DE0007164600' });
 
@@ -437,7 +449,9 @@ describe('MarketDataService', () => {
   // ==========================================================================
   describe('getMarketStatus', () => {
     it('should throw if not authenticated', async () => {
-      mockApi.getAuthStatus.mockReturnValue(AuthStatus.UNAUTHENTICATED);
+      mockTradeRepublicApiService.getAuthStatus.mockReturnValue(
+        AuthStatus.UNAUTHENTICATED,
+      );
 
       await expect(
         service.getMarketStatus({ isin: 'DE0007164600' }),
@@ -449,15 +463,16 @@ describe('MarketDataService', () => {
         bid: { price: 100.5, size: 1000 },
         ask: { price: 100.6, size: 500 },
       };
-      mockApi.subscribeAndWait.mockResolvedValue(tickerData);
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue(
+        tickerData,
+      );
 
       await service.getMarketStatus({ isin: 'DE0007164600' });
 
-      expect(mockApi.subscribeAndWait).toHaveBeenCalledWith(
+      expect(mockTradeRepublicApiService.subscribeAndWait).toHaveBeenCalledWith(
         'ticker',
         { id: 'DE0007164600.LSX' },
         TickerApiResponseSchema,
-        CUSTOM_TIMEOUT,
       );
     });
 
@@ -466,7 +481,9 @@ describe('MarketDataService', () => {
         bid: { price: 100.5, size: 1000 },
         ask: { price: 100.6, size: 500 },
       };
-      mockApi.subscribeAndWait.mockResolvedValue(tickerData);
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue(
+        tickerData,
+      );
 
       const result = await service.getMarketStatus({ isin: 'DE0007164600' });
 
@@ -484,7 +501,9 @@ describe('MarketDataService', () => {
         bid: { price: 0, size: 0 },
         ask: { price: 100.6, size: 500 },
       };
-      mockApi.subscribeAndWait.mockResolvedValue(tickerData);
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue(
+        tickerData,
+      );
 
       const result = await service.getMarketStatus({ isin: 'DE0007164600' });
 
@@ -500,7 +519,9 @@ describe('MarketDataService', () => {
         ask: { price: 0, size: 0 },
         pre: { price: 99.5 },
       };
-      mockApi.subscribeAndWait.mockResolvedValue(tickerData);
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue(
+        tickerData,
+      );
 
       const result = await service.getMarketStatus({ isin: 'DE0007164600' });
 
@@ -514,7 +535,9 @@ describe('MarketDataService', () => {
   // ==========================================================================
   describe('waitForMarket', () => {
     it('should throw if not authenticated', async () => {
-      mockApi.getAuthStatus.mockReturnValue(AuthStatus.UNAUTHENTICATED);
+      mockTradeRepublicApiService.getAuthStatus.mockReturnValue(
+        AuthStatus.UNAUTHENTICATED,
+      );
 
       await expect(
         service.waitForMarket({ isin: 'DE0007164600' }),
@@ -526,7 +549,9 @@ describe('MarketDataService', () => {
         bid: { price: 100.5, size: 1000 },
         ask: { price: 100.6, size: 500 },
       };
-      mockApi.subscribeAndWait.mockResolvedValue(tickerData);
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue(
+        tickerData,
+      );
 
       const result = await service.waitForMarket({ isin: 'DE0007164600' });
 
@@ -541,7 +566,9 @@ describe('MarketDataService', () => {
         bid: { price: 0, size: 0 },
         ask: { price: 0, size: 0 },
       };
-      mockApi.subscribeAndWait.mockResolvedValue(tickerData);
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue(
+        tickerData,
+      );
 
       const promise = service.waitForMarket({
         isin: 'DE0007164600',
@@ -563,7 +590,7 @@ describe('MarketDataService', () => {
       jest.useFakeTimers();
 
       let callCount = 0;
-      mockApi.subscribeAndWait.mockImplementation(() => {
+      mockTradeRepublicApiService.subscribeAndWait.mockImplementation(() => {
         callCount++;
         if (callCount < 3) {
           return Promise.resolve({
@@ -598,7 +625,9 @@ describe('MarketDataService', () => {
         bid: { price: 100, size: 1000 },
         ask: { price: 101, size: 500 },
       };
-      mockApi.subscribeAndWait.mockResolvedValue(tickerData);
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue(
+        tickerData,
+      );
 
       await service.waitForMarket({ isin: 'DE0007164600' });
 
@@ -615,7 +644,7 @@ describe('MarketDataService', () => {
       jest.useFakeTimers();
 
       let callCount = 0;
-      mockApi.subscribeAndWait.mockImplementation(() => {
+      mockTradeRepublicApiService.subscribeAndWait.mockImplementation(() => {
         callCount++;
         if (callCount === 1) {
           return Promise.reject(new Error('Temporary error'));

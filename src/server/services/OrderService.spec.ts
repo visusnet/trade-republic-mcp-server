@@ -1,7 +1,7 @@
-/* eslint-disable @typescript-eslint/unbound-method */
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 
 import { mockLogger } from '@test/loggerMock';
+import { mockTradeRepublicApiService } from '@test/serviceMocks';
 
 const logger = mockLogger();
 jest.mock('../../logger', () => ({
@@ -26,27 +26,6 @@ import {
   GetOrdersResponseSchema,
   CancelOrderResponseSchema,
 } from './OrderService.response';
-
-/**
- * Creates a mock TradeRepublicApiService for testing.
- */
-function createMockApiService(): jest.Mocked<TradeRepublicApiService> {
-  return {
-    getAuthStatus: jest
-      .fn<() => AuthStatus>()
-      .mockReturnValue(AuthStatus.AUTHENTICATED),
-    subscribeAndWait: jest
-      .fn<
-        <T>(
-          topic: string,
-          payload: Record<string, unknown>,
-          schema: { safeParse: (data: unknown) => unknown },
-          timeoutMs?: number,
-        ) => Promise<T>
-      >()
-      .mockResolvedValue({} as never),
-  } as unknown as jest.Mocked<TradeRepublicApiService>;
-}
 
 describe('OrderService.types', () => {
   describe('Error Classes', () => {
@@ -524,18 +503,24 @@ describe('OrderService.response', () => {
 });
 
 describe('OrderService', () => {
-  let mockApi: jest.Mocked<TradeRepublicApiService>;
   let service: OrderService;
-  const CUSTOM_TIMEOUT = 5000;
 
   beforeEach(() => {
-    mockApi = createMockApiService();
-    service = new OrderService(mockApi, CUSTOM_TIMEOUT);
+    jest.clearAllMocks();
+    mockTradeRepublicApiService.getAuthStatus.mockReturnValue(
+      AuthStatus.AUTHENTICATED,
+    );
+    mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue({} as never);
+    service = new OrderService(
+      mockTradeRepublicApiService as unknown as TradeRepublicApiService,
+    );
   });
 
   describe('placeOrder', () => {
     it('should throw if not authenticated', async () => {
-      mockApi.getAuthStatus.mockReturnValue(AuthStatus.UNAUTHENTICATED);
+      mockTradeRepublicApiService.getAuthStatus.mockReturnValue(
+        AuthStatus.UNAUTHENTICATED,
+      );
 
       await expect(
         service.placeOrder({
@@ -570,7 +555,9 @@ describe('OrderService', () => {
         warnings: [],
         timestamp: '2026-02-01T12:00:00Z',
       };
-      mockApi.subscribeAndWait.mockResolvedValue(orderResponse);
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue(
+        orderResponse,
+      );
 
       await service.placeOrder({
         isin: 'DE0007164600',
@@ -579,7 +566,7 @@ describe('OrderService', () => {
         size: 10,
       });
 
-      expect(mockApi.subscribeAndWait).toHaveBeenCalledWith(
+      expect(mockTradeRepublicApiService.subscribeAndWait).toHaveBeenCalledWith(
         'simpleCreateOrder',
         expect.objectContaining({
           isin: 'DE0007164600',
@@ -588,7 +575,6 @@ describe('OrderService', () => {
           size: 10,
         }),
         PlaceOrderResponseSchema,
-        CUSTOM_TIMEOUT,
       );
     });
 
@@ -604,7 +590,9 @@ describe('OrderService', () => {
         limitPrice: 150.5,
         timestamp: '2026-02-01T12:00:00Z',
       };
-      mockApi.subscribeAndWait.mockResolvedValue(orderResponse);
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue(
+        orderResponse,
+      );
 
       await service.placeOrder({
         isin: 'US0378331005',
@@ -614,7 +602,7 @@ describe('OrderService', () => {
         limitPrice: 150.5,
       });
 
-      expect(mockApi.subscribeAndWait).toHaveBeenCalledWith(
+      expect(mockTradeRepublicApiService.subscribeAndWait).toHaveBeenCalledWith(
         'simpleCreateOrder',
         expect.objectContaining({
           isin: 'US0378331005',
@@ -624,7 +612,6 @@ describe('OrderService', () => {
           limit: 150.5,
         }),
         PlaceOrderResponseSchema,
-        CUSTOM_TIMEOUT,
       );
     });
 
@@ -640,7 +627,9 @@ describe('OrderService', () => {
         stopPrice: 145.0,
         timestamp: '2026-02-01T12:00:00Z',
       };
-      mockApi.subscribeAndWait.mockResolvedValue(orderResponse);
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue(
+        orderResponse,
+      );
 
       await service.placeOrder({
         isin: 'US0378331005',
@@ -650,7 +639,7 @@ describe('OrderService', () => {
         stopPrice: 145.0,
       });
 
-      expect(mockApi.subscribeAndWait).toHaveBeenCalledWith(
+      expect(mockTradeRepublicApiService.subscribeAndWait).toHaveBeenCalledWith(
         'simpleCreateOrder',
         expect.objectContaining({
           isin: 'US0378331005',
@@ -660,12 +649,13 @@ describe('OrderService', () => {
           stop: 145.0,
         }),
         PlaceOrderResponseSchema,
-        CUSTOM_TIMEOUT,
       );
     });
 
     it('should pass optional expiry field', async () => {
-      mockApi.subscribeAndWait.mockResolvedValue({ orderId: 'order-126' });
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue({
+        orderId: 'order-126',
+      });
 
       await service.placeOrder({
         isin: 'DE0007164600',
@@ -675,18 +665,19 @@ describe('OrderService', () => {
         expiry: 'gtc',
       });
 
-      expect(mockApi.subscribeAndWait).toHaveBeenCalledWith(
+      expect(mockTradeRepublicApiService.subscribeAndWait).toHaveBeenCalledWith(
         'simpleCreateOrder',
         expect.objectContaining({
           expiry: 'gtc',
         }),
         PlaceOrderResponseSchema,
-        CUSTOM_TIMEOUT,
       );
     });
 
     it('should pass optional exchange field as exchangeId', async () => {
-      mockApi.subscribeAndWait.mockResolvedValue({ orderId: 'order-127' });
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue({
+        orderId: 'order-127',
+      });
 
       await service.placeOrder({
         isin: 'DE0007164600',
@@ -696,18 +687,19 @@ describe('OrderService', () => {
         exchange: 'XETRA',
       });
 
-      expect(mockApi.subscribeAndWait).toHaveBeenCalledWith(
+      expect(mockTradeRepublicApiService.subscribeAndWait).toHaveBeenCalledWith(
         'simpleCreateOrder',
         expect.objectContaining({
           exchangeId: 'XETRA',
         }),
         PlaceOrderResponseSchema,
-        CUSTOM_TIMEOUT,
       );
     });
 
     it('should pass optional sellFractions field', async () => {
-      mockApi.subscribeAndWait.mockResolvedValue({ orderId: 'order-128' });
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue({
+        orderId: 'order-128',
+      });
 
       await service.placeOrder({
         isin: 'DE0007164600',
@@ -717,18 +709,19 @@ describe('OrderService', () => {
         sellFractions: true,
       });
 
-      expect(mockApi.subscribeAndWait).toHaveBeenCalledWith(
+      expect(mockTradeRepublicApiService.subscribeAndWait).toHaveBeenCalledWith(
         'simpleCreateOrder',
         expect.objectContaining({
           sellFractions: true,
         }),
         PlaceOrderResponseSchema,
-        CUSTOM_TIMEOUT,
       );
     });
 
     it('should pass optional warningsShown field', async () => {
-      mockApi.subscribeAndWait.mockResolvedValue({ orderId: 'order-129' });
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue({
+        orderId: 'order-129',
+      });
 
       await service.placeOrder({
         isin: 'DE0007164600',
@@ -738,18 +731,19 @@ describe('OrderService', () => {
         warningsShown: ['RISK_WARNING'],
       });
 
-      expect(mockApi.subscribeAndWait).toHaveBeenCalledWith(
+      expect(mockTradeRepublicApiService.subscribeAndWait).toHaveBeenCalledWith(
         'simpleCreateOrder',
         expect.objectContaining({
           warningsShown: ['RISK_WARNING'],
         }),
         PlaceOrderResponseSchema,
-        CUSTOM_TIMEOUT,
       );
     });
 
     it('should pass optional expiryDate field', async () => {
-      mockApi.subscribeAndWait.mockResolvedValue({ orderId: 'order-130' });
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue({
+        orderId: 'order-130',
+      });
 
       await service.placeOrder({
         isin: 'DE0007164600',
@@ -761,13 +755,12 @@ describe('OrderService', () => {
         expiryDate: '2026-12-31',
       });
 
-      expect(mockApi.subscribeAndWait).toHaveBeenCalledWith(
+      expect(mockTradeRepublicApiService.subscribeAndWait).toHaveBeenCalledWith(
         'simpleCreateOrder',
         expect.objectContaining({
           expiryDate: '2026-12-31',
         }),
         PlaceOrderResponseSchema,
-        CUSTOM_TIMEOUT,
       );
     });
 
@@ -786,7 +779,9 @@ describe('OrderService', () => {
         warnings: [],
         timestamp: '2026-02-01T12:00:00Z',
       };
-      mockApi.subscribeAndWait.mockResolvedValue(orderResponse);
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue(
+        orderResponse,
+      );
 
       const result = await service.placeOrder({
         isin: 'DE0007164600',
@@ -803,7 +798,7 @@ describe('OrderService', () => {
     });
 
     it('should propagate errors from subscribeAndWait', async () => {
-      mockApi.subscribeAndWait.mockRejectedValue(
+      mockTradeRepublicApiService.subscribeAndWait.mockRejectedValue(
         new TradeRepublicError('simpleCreateOrder request timed out'),
       );
 
@@ -818,7 +813,7 @@ describe('OrderService', () => {
     });
 
     it('should log the order request', async () => {
-      mockApi.subscribeAndWait.mockResolvedValue({
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue({
         orderId: 'order-123',
         status: 'pending',
       });
@@ -839,7 +834,9 @@ describe('OrderService', () => {
 
   describe('getOrders', () => {
     it('should throw if not authenticated', async () => {
-      mockApi.getAuthStatus.mockReturnValue(AuthStatus.UNAUTHENTICATED);
+      mockTradeRepublicApiService.getAuthStatus.mockReturnValue(
+        AuthStatus.UNAUTHENTICATED,
+      );
 
       await expect(service.getOrders()).rejects.toThrow(TradeRepublicError);
       await expect(service.getOrders()).rejects.toThrow('Not authenticated');
@@ -851,15 +848,16 @@ describe('OrderService', () => {
         totalCount: 0,
         timestamp: '2026-02-01T12:00:00Z',
       };
-      mockApi.subscribeAndWait.mockResolvedValue(ordersResponse);
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue(
+        ordersResponse,
+      );
 
       await service.getOrders();
 
-      expect(mockApi.subscribeAndWait).toHaveBeenCalledWith(
+      expect(mockTradeRepublicApiService.subscribeAndWait).toHaveBeenCalledWith(
         'orders',
         {},
         GetOrdersResponseSchema,
-        CUSTOM_TIMEOUT,
       );
     });
 
@@ -881,7 +879,9 @@ describe('OrderService', () => {
         totalCount: 1,
         timestamp: '2026-02-01T12:00:00Z',
       };
-      mockApi.subscribeAndWait.mockResolvedValue(ordersResponse);
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue(
+        ordersResponse,
+      );
 
       const result = await service.getOrders();
 
@@ -891,7 +891,7 @@ describe('OrderService', () => {
     });
 
     it('should propagate errors from subscribeAndWait', async () => {
-      mockApi.subscribeAndWait.mockRejectedValue(
+      mockTradeRepublicApiService.subscribeAndWait.mockRejectedValue(
         new TradeRepublicError('orders request timed out'),
       );
 
@@ -901,7 +901,7 @@ describe('OrderService', () => {
     });
 
     it('should log the request', async () => {
-      mockApi.subscribeAndWait.mockResolvedValue({
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue({
         orders: [],
         totalCount: 0,
       });
@@ -914,7 +914,9 @@ describe('OrderService', () => {
 
   describe('cancelOrder', () => {
     it('should throw if not authenticated', async () => {
-      mockApi.getAuthStatus.mockReturnValue(AuthStatus.UNAUTHENTICATED);
+      mockTradeRepublicApiService.getAuthStatus.mockReturnValue(
+        AuthStatus.UNAUTHENTICATED,
+      );
 
       await expect(
         service.cancelOrder({ orderId: 'order-123' }),
@@ -931,15 +933,16 @@ describe('OrderService', () => {
         cancelled: true,
         timestamp: '2026-02-01T12:00:00Z',
       };
-      mockApi.subscribeAndWait.mockResolvedValue(cancelResponse);
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue(
+        cancelResponse,
+      );
 
       await service.cancelOrder({ orderId: 'order-123' });
 
-      expect(mockApi.subscribeAndWait).toHaveBeenCalledWith(
+      expect(mockTradeRepublicApiService.subscribeAndWait).toHaveBeenCalledWith(
         'cancelOrder',
         { orderId: 'order-123' },
         CancelOrderResponseSchema,
-        CUSTOM_TIMEOUT,
       );
     });
 
@@ -950,7 +953,9 @@ describe('OrderService', () => {
         cancelled: true,
         timestamp: '2026-02-01T12:00:00Z',
       };
-      mockApi.subscribeAndWait.mockResolvedValue(cancelResponse);
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue(
+        cancelResponse,
+      );
 
       const result = await service.cancelOrder({ orderId: 'order-123' });
 
@@ -959,7 +964,7 @@ describe('OrderService', () => {
     });
 
     it('should propagate errors from subscribeAndWait', async () => {
-      mockApi.subscribeAndWait.mockRejectedValue(
+      mockTradeRepublicApiService.subscribeAndWait.mockRejectedValue(
         new TradeRepublicError('Order already executed'),
       );
 
@@ -969,7 +974,7 @@ describe('OrderService', () => {
     });
 
     it('should log the cancel request', async () => {
-      mockApi.subscribeAndWait.mockResolvedValue({
+      mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue({
         orderId: 'order-123',
         cancelled: true,
       });
@@ -985,7 +990,9 @@ describe('OrderService', () => {
 
   describe('modifyOrder', () => {
     it('should throw if not authenticated', () => {
-      mockApi.getAuthStatus.mockReturnValue(AuthStatus.UNAUTHENTICATED);
+      mockTradeRepublicApiService.getAuthStatus.mockReturnValue(
+        AuthStatus.UNAUTHENTICATED,
+      );
 
       expect(() =>
         service.modifyOrder({

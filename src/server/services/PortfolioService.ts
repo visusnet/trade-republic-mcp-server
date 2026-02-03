@@ -22,13 +22,8 @@ import {
   type GetCashBalanceResponse,
 } from './PortfolioService.response';
 
-const DEFAULT_SUBSCRIPTION_TIMEOUT_MS = 30_000;
-
 export class PortfolioService {
-  constructor(
-    private readonly api: TradeRepublicApiService,
-    private readonly timeoutMs: number = DEFAULT_SUBSCRIPTION_TIMEOUT_MS,
-  ) {}
+  constructor(private readonly api: TradeRepublicApiService) {}
 
   public async getPortfolio(
     _request?: GetPortfolioRequest,
@@ -39,7 +34,6 @@ export class PortfolioService {
       'compactPortfolio',
       {},
       GetPortfolioResponseSchema,
-      this.timeoutMs,
     );
   }
 
@@ -48,12 +42,7 @@ export class PortfolioService {
   ): Promise<GetCashBalanceResponse> {
     this.ensureAuthenticated();
     logger.api.info('Requesting cash balance data');
-    return this.api.subscribeAndWait(
-      'cash',
-      {},
-      GetCashBalanceResponseSchema,
-      this.timeoutMs,
-    );
+    return this.api.subscribeAndWait('cash', {}, GetCashBalanceResponseSchema);
   }
 
   private ensureAuthenticated(): void {

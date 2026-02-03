@@ -7,20 +7,17 @@ jest.mock('../../logger', () => ({
   logger,
 }));
 
-const mockSearch =
-  jest.fn<
-    (
-      query: string,
-    ) => Promise<{
-      quotes: Array<{ symbol?: string; isYahooFinance?: boolean }>;
-    }>
-  >();
+const mockSearch = jest.fn<
+  (query: string) => Promise<{
+    quotes: Array<{ symbol?: string; isYahooFinance?: boolean }>;
+  }>
+>();
 
 // Mock yahoo-finance2 module - mock as a class constructor
 jest.mock('yahoo-finance2', () => ({
   __esModule: true,
   default: class MockYahooFinance {
-    search = mockSearch;
+    public search = mockSearch;
   },
 }));
 

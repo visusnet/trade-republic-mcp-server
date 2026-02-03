@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method */
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 
 import { mockLogger } from '@test/loggerMock';
@@ -21,7 +20,7 @@ const mockQuoteSummary =
 jest.mock('yahoo-finance2', () => ({
   __esModule: true,
   default: class MockYahooFinance {
-    quoteSummary = mockQuoteSummary;
+    public quoteSummary = mockQuoteSummary;
   },
 }));
 
@@ -30,17 +29,23 @@ import { FundamentalsServiceError } from './FundamentalsService.types';
 import type { SymbolMapper } from './SymbolMapper';
 import type { GetFundamentalsRequest } from './FundamentalsService.request';
 
+// Standalone mock functions to avoid unbound-method lint errors
+const isinToSymbolMock = jest.fn<SymbolMapper['isinToSymbol']>();
+const clearCacheMock = jest.fn<SymbolMapper['clearCache']>();
+
 describe('FundamentalsService', () => {
   let service: FundamentalsService;
-  let mockSymbolMapper: jest.Mocked<SymbolMapper>;
+  let mockSymbolMapper: SymbolMapper;
 
   beforeEach(() => {
-    mockSymbolMapper = {
-      isinToSymbol: jest.fn(),
-      clearCache: jest.fn(),
-    } as unknown as jest.Mocked<SymbolMapper>;
-
+    isinToSymbolMock.mockReset();
+    clearCacheMock.mockReset();
     mockQuoteSummary.mockReset();
+
+    mockSymbolMapper = {
+      isinToSymbol: isinToSymbolMock,
+      clearCache: clearCacheMock,
+    } as unknown as SymbolMapper;
 
     service = new FundamentalsService(mockSymbolMapper);
   });
@@ -52,7 +57,7 @@ describe('FundamentalsService', () => {
     };
 
     it('should return fundamentals for valid ISIN', async () => {
-      mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
+      isinToSymbolMock.mockResolvedValue('AAPL');
       mockQuoteSummary.mockResolvedValue({
         assetProfile: {
           sector: 'Technology',
@@ -76,18 +81,16 @@ describe('FundamentalsService', () => {
     });
 
     it('should call symbolMapper with ISIN', async () => {
-      mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
+      isinToSymbolMock.mockResolvedValue('AAPL');
       mockQuoteSummary.mockResolvedValue({});
 
       await service.getFundamentals(validRequest);
 
-      expect(mockSymbolMapper.isinToSymbol).toHaveBeenCalledWith(
-        'US0378331005',
-      );
+      expect(isinToSymbolMock).toHaveBeenCalledWith('US0378331005');
     });
 
     it('should call quoteSummary with correct modules', async () => {
-      mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
+      isinToSymbolMock.mockResolvedValue('AAPL');
       mockQuoteSummary.mockResolvedValue({});
 
       await service.getFundamentals({
@@ -105,7 +108,7 @@ describe('FundamentalsService', () => {
     });
 
     it('should use default modules when not provided', async () => {
-      mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
+      isinToSymbolMock.mockResolvedValue('AAPL');
       mockQuoteSummary.mockResolvedValue({});
 
       await service.getFundamentals({ isin: 'US0378331005' });
@@ -121,9 +124,7 @@ describe('FundamentalsService', () => {
     });
 
     it('should throw FundamentalsServiceError when symbolMapper fails', async () => {
-      mockSymbolMapper.isinToSymbol.mockRejectedValue(
-        new Error('No symbol found'),
-      );
+      isinToSymbolMock.mockRejectedValue(new Error('No symbol found'));
 
       await expect(service.getFundamentals(validRequest)).rejects.toThrow(
         FundamentalsServiceError,
@@ -134,7 +135,7 @@ describe('FundamentalsService', () => {
     });
 
     it('should throw FundamentalsServiceError when quoteSummary fails', async () => {
-      mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
+      isinToSymbolMock.mockResolvedValue('AAPL');
       mockQuoteSummary.mockRejectedValue(new Error('Network error'));
 
       await expect(service.getFundamentals(validRequest)).rejects.toThrow(
@@ -146,7 +147,7 @@ describe('FundamentalsService', () => {
     });
 
     it('should handle non-Error thrown from dependencies', async () => {
-      mockSymbolMapper.isinToSymbol.mockRejectedValue('String error');
+      isinToSymbolMock.mockRejectedValue('String error');
 
       await expect(service.getFundamentals(validRequest)).rejects.toThrow(
         'Failed to get fundamentals: String error',
@@ -154,7 +155,7 @@ describe('FundamentalsService', () => {
     });
 
     it('should include timestamp in response', async () => {
-      mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
+      isinToSymbolMock.mockResolvedValue('AAPL');
       mockQuoteSummary.mockResolvedValue({});
 
       const result = await service.getFundamentals(validRequest);
@@ -166,7 +167,7 @@ describe('FundamentalsService', () => {
 
   describe('profile module', () => {
     it('should extract profile data', async () => {
-      mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
+      isinToSymbolMock.mockResolvedValue('AAPL');
       mockQuoteSummary.mockResolvedValue({
         assetProfile: {
           sector: 'Technology',
@@ -198,7 +199,7 @@ describe('FundamentalsService', () => {
     });
 
     it('should use shortName if longName not available', async () => {
-      mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
+      isinToSymbolMock.mockResolvedValue('AAPL');
       mockQuoteSummary.mockResolvedValue({
         assetProfile: {},
         price: {
@@ -215,7 +216,7 @@ describe('FundamentalsService', () => {
     });
 
     it('should handle missing assetProfile', async () => {
-      mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
+      isinToSymbolMock.mockResolvedValue('AAPL');
       mockQuoteSummary.mockResolvedValue({});
 
       const result = await service.getFundamentals({
@@ -229,7 +230,7 @@ describe('FundamentalsService', () => {
 
   describe('financials module', () => {
     it('should extract financials data', async () => {
-      mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
+      isinToSymbolMock.mockResolvedValue('AAPL');
       mockQuoteSummary.mockResolvedValue({
         financialData: {
           totalRevenue: 394328000000,
@@ -263,7 +264,7 @@ describe('FundamentalsService', () => {
     });
 
     it('should handle missing financialData', async () => {
-      mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
+      isinToSymbolMock.mockResolvedValue('AAPL');
       mockQuoteSummary.mockResolvedValue({});
 
       const result = await service.getFundamentals({
@@ -275,7 +276,7 @@ describe('FundamentalsService', () => {
     });
 
     it('should handle partial financialData', async () => {
-      mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
+      isinToSymbolMock.mockResolvedValue('AAPL');
       mockQuoteSummary.mockResolvedValue({
         financialData: {
           totalRevenue: 394328000000,
@@ -294,7 +295,7 @@ describe('FundamentalsService', () => {
 
   describe('earnings module', () => {
     it('should extract earnings data', async () => {
-      mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
+      isinToSymbolMock.mockResolvedValue('AAPL');
       mockQuoteSummary.mockResolvedValue({
         defaultKeyStatistics: {
           trailingEps: 6.13,
@@ -323,7 +324,7 @@ describe('FundamentalsService', () => {
     });
 
     it('should handle missing calendarEvents', async () => {
-      mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
+      isinToSymbolMock.mockResolvedValue('AAPL');
       mockQuoteSummary.mockResolvedValue({
         defaultKeyStatistics: {
           trailingEps: 6.13,
@@ -340,7 +341,7 @@ describe('FundamentalsService', () => {
     });
 
     it('should handle empty earnings dates array', async () => {
-      mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
+      isinToSymbolMock.mockResolvedValue('AAPL');
       mockQuoteSummary.mockResolvedValue({
         calendarEvents: {
           earnings: {
@@ -358,7 +359,7 @@ describe('FundamentalsService', () => {
     });
 
     it('should calculate EPS growth when both trailing and forward available', async () => {
-      mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
+      isinToSymbolMock.mockResolvedValue('AAPL');
       mockQuoteSummary.mockResolvedValue({
         defaultKeyStatistics: {
           trailingEps: 5.0,
@@ -377,7 +378,7 @@ describe('FundamentalsService', () => {
 
   describe('valuation module', () => {
     it('should extract valuation data', async () => {
-      mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
+      isinToSymbolMock.mockResolvedValue('AAPL');
       mockQuoteSummary.mockResolvedValue({
         summaryDetail: {
           marketCap: 2890000000000,
@@ -413,7 +414,7 @@ describe('FundamentalsService', () => {
     });
 
     it('should handle missing summaryDetail', async () => {
-      mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
+      isinToSymbolMock.mockResolvedValue('AAPL');
       mockQuoteSummary.mockResolvedValue({
         defaultKeyStatistics: {
           pegRatio: 2.45,
@@ -432,7 +433,7 @@ describe('FundamentalsService', () => {
 
   describe('recommendations module', () => {
     it('should extract recommendations data', async () => {
-      mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
+      isinToSymbolMock.mockResolvedValue('AAPL');
       mockQuoteSummary.mockResolvedValue({
         financialData: {
           targetMeanPrice: 210.5,
@@ -470,7 +471,7 @@ describe('FundamentalsService', () => {
     });
 
     it('should handle missing recommendationTrend', async () => {
-      mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
+      isinToSymbolMock.mockResolvedValue('AAPL');
       mockQuoteSummary.mockResolvedValue({
         financialData: {
           recommendationKey: 'buy',
@@ -487,7 +488,7 @@ describe('FundamentalsService', () => {
     });
 
     it('should handle empty trend array', async () => {
-      mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
+      isinToSymbolMock.mockResolvedValue('AAPL');
       mockQuoteSummary.mockResolvedValue({
         recommendationTrend: {
           trend: [],
@@ -505,7 +506,7 @@ describe('FundamentalsService', () => {
 
   describe('all modules', () => {
     it('should fetch all modules when requested', async () => {
-      mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
+      isinToSymbolMock.mockResolvedValue('AAPL');
       mockQuoteSummary.mockResolvedValue({
         assetProfile: { sector: 'Technology' },
         financialData: { totalRevenue: 100 },
@@ -533,7 +534,7 @@ describe('FundamentalsService', () => {
     });
 
     it('should only include requested modules in response', async () => {
-      mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
+      isinToSymbolMock.mockResolvedValue('AAPL');
       mockQuoteSummary.mockResolvedValue({
         assetProfile: { sector: 'Technology' },
       });

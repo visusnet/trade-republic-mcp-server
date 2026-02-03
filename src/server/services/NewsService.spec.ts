@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method */
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 
 import { mockLogger } from '@test/loggerMock';
@@ -32,7 +31,7 @@ const mockSearch =
 jest.mock('yahoo-finance2', () => ({
   __esModule: true,
   default: class MockYahooFinance {
-    search = mockSearch;
+    public search = mockSearch;
   },
 }));
 
@@ -41,17 +40,23 @@ import { NewsServiceError } from './NewsService.types';
 import type { SymbolMapper } from './SymbolMapper';
 import type { GetNewsRequest } from './NewsService.request';
 
+// Standalone mock functions to avoid unbound-method lint errors
+const isinToSymbolMock = jest.fn<SymbolMapper['isinToSymbol']>();
+const clearCacheMock = jest.fn<SymbolMapper['clearCache']>();
+
 describe('NewsService', () => {
   let service: NewsService;
-  let mockSymbolMapper: jest.Mocked<SymbolMapper>;
+  let mockSymbolMapper: SymbolMapper;
 
   beforeEach(() => {
     mockSearch.mockReset();
+    isinToSymbolMock.mockReset();
+    clearCacheMock.mockReset();
 
     mockSymbolMapper = {
-      isinToSymbol: jest.fn(),
-      clearCache: jest.fn(),
-    } as unknown as jest.Mocked<SymbolMapper>;
+      isinToSymbol: isinToSymbolMock,
+      clearCache: clearCacheMock,
+    } as unknown as SymbolMapper;
 
     service = new NewsService(mockSymbolMapper);
   });
@@ -63,7 +68,7 @@ describe('NewsService', () => {
     };
 
     it('should return news articles for valid ISIN', async () => {
-      mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
+      isinToSymbolMock.mockResolvedValue('AAPL');
       mockSearch.mockResolvedValue({
         news: [
           {
@@ -92,18 +97,16 @@ describe('NewsService', () => {
     });
 
     it('should call symbolMapper with ISIN', async () => {
-      mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
+      isinToSymbolMock.mockResolvedValue('AAPL');
       mockSearch.mockResolvedValue({ news: [] });
 
       await service.getNews(validRequest);
 
-      expect(mockSymbolMapper.isinToSymbol).toHaveBeenCalledWith(
-        'US0378331005',
-      );
+      expect(isinToSymbolMock).toHaveBeenCalledWith('US0378331005');
     });
 
     it('should call Yahoo Finance search with symbol and news count', async () => {
-      mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
+      isinToSymbolMock.mockResolvedValue('AAPL');
       mockSearch.mockResolvedValue({ news: [] });
 
       await service.getNews({ isin: 'US0378331005', limit: 15 });
@@ -114,7 +117,7 @@ describe('NewsService', () => {
     });
 
     it('should use default limit of 10 when not provided', async () => {
-      mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
+      isinToSymbolMock.mockResolvedValue('AAPL');
       mockSearch.mockResolvedValue({ news: [] });
 
       await service.getNews({ isin: 'US0378331005' });
@@ -125,7 +128,7 @@ describe('NewsService', () => {
     });
 
     it('should return empty articles array when no news found', async () => {
-      mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
+      isinToSymbolMock.mockResolvedValue('AAPL');
       mockSearch.mockResolvedValue({ news: [] });
 
       const result = await service.getNews(validRequest);
@@ -135,7 +138,7 @@ describe('NewsService', () => {
     });
 
     it('should handle articles without thumbnails', async () => {
-      mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
+      isinToSymbolMock.mockResolvedValue('AAPL');
       mockSearch.mockResolvedValue({
         news: [
           {
@@ -153,7 +156,7 @@ describe('NewsService', () => {
     });
 
     it('should handle articles with empty thumbnail resolutions', async () => {
-      mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
+      isinToSymbolMock.mockResolvedValue('AAPL');
       mockSearch.mockResolvedValue({
         news: [
           {
@@ -172,7 +175,7 @@ describe('NewsService', () => {
     });
 
     it('should convert providerPublishTime to ISO string', async () => {
-      mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
+      isinToSymbolMock.mockResolvedValue('AAPL');
       mockSearch.mockResolvedValue({
         news: [
           {
@@ -190,9 +193,7 @@ describe('NewsService', () => {
     });
 
     it('should throw NewsServiceError when symbolMapper fails', async () => {
-      mockSymbolMapper.isinToSymbol.mockRejectedValue(
-        new Error('No symbol found'),
-      );
+      isinToSymbolMock.mockRejectedValue(new Error('No symbol found'));
 
       await expect(service.getNews(validRequest)).rejects.toThrow(
         NewsServiceError,
@@ -203,7 +204,7 @@ describe('NewsService', () => {
     });
 
     it('should throw NewsServiceError when Yahoo Finance search fails', async () => {
-      mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
+      isinToSymbolMock.mockResolvedValue('AAPL');
       mockSearch.mockRejectedValue(new Error('Network error'));
 
       await expect(service.getNews(validRequest)).rejects.toThrow(
@@ -215,7 +216,7 @@ describe('NewsService', () => {
     });
 
     it('should handle non-Error thrown from dependencies', async () => {
-      mockSymbolMapper.isinToSymbol.mockRejectedValue('String error');
+      isinToSymbolMock.mockRejectedValue('String error');
 
       await expect(service.getNews(validRequest)).rejects.toThrow(
         'Failed to get news: String error',
@@ -223,7 +224,7 @@ describe('NewsService', () => {
     });
 
     it('should include timestamp in response', async () => {
-      mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
+      isinToSymbolMock.mockResolvedValue('AAPL');
       mockSearch.mockResolvedValue({ news: [] });
 
       const result = await service.getNews(validRequest);
@@ -233,7 +234,7 @@ describe('NewsService', () => {
     });
 
     it('should return totalCount matching articles length', async () => {
-      mockSymbolMapper.isinToSymbol.mockResolvedValue('AAPL');
+      isinToSymbolMock.mockResolvedValue('AAPL');
       mockSearch.mockResolvedValue({
         news: [
           {

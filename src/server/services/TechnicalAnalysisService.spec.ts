@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
-/* eslint-disable @typescript-eslint/unbound-method */
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 
 import { mockLogger } from '@test/loggerMock';
@@ -14,13 +13,16 @@ import { TechnicalAnalysisError } from './TechnicalAnalysisService.types';
 import type { MarketDataService } from './MarketDataService';
 import type { GetPriceHistoryResponse } from './MarketDataService.response';
 
+// Standalone mock functions to avoid unbound-method lint errors
+const getPriceHistoryMock =
+  jest.fn<(request: unknown) => Promise<GetPriceHistoryResponse>>();
+
 /**
  * Creates a mock MarketDataService for testing.
  */
 function createMockMarketDataService(): jest.Mocked<MarketDataService> {
   return {
-    getPriceHistory:
-      jest.fn<(request: unknown) => Promise<GetPriceHistoryResponse>>(),
+    getPriceHistory: getPriceHistoryMock,
     getPrice: jest.fn(),
     getOrderBook: jest.fn(),
     searchAssets: jest.fn(),
@@ -128,7 +130,7 @@ describe('TechnicalAnalysisService', () => {
         indicators: [{ type: 'RSI' }],
       });
 
-      expect(mockMarketData.getPriceHistory).toHaveBeenCalledWith({
+      expect(getPriceHistoryMock).toHaveBeenCalledWith({
         isin: 'DE0007164600',
         range: '3m',
         exchange: 'LSX',
@@ -365,7 +367,7 @@ describe('TechnicalAnalysisService', () => {
         exchange: 'XETRA',
       });
 
-      expect(mockMarketData.getPriceHistory).toHaveBeenCalledWith({
+      expect(getPriceHistoryMock).toHaveBeenCalledWith({
         isin: 'DE0007164600',
         range: '3m',
         exchange: 'XETRA',
@@ -465,7 +467,7 @@ describe('TechnicalAnalysisService', () => {
         isin: 'DE0007164600',
       });
 
-      expect(mockMarketData.getPriceHistory).toHaveBeenCalledWith({
+      expect(getPriceHistoryMock).toHaveBeenCalledWith({
         isin: 'DE0007164600',
         range: '3m',
         exchange: 'LSX',
@@ -678,7 +680,7 @@ describe('TechnicalAnalysisService', () => {
         range: '1y',
       });
 
-      expect(mockMarketData.getPriceHistory).toHaveBeenCalledWith({
+      expect(getPriceHistoryMock).toHaveBeenCalledWith({
         isin: 'DE0007164600',
         range: '1y',
         exchange: 'LSX',
@@ -699,7 +701,7 @@ describe('TechnicalAnalysisService', () => {
         exchange: 'XETRA',
       });
 
-      expect(mockMarketData.getPriceHistory).toHaveBeenCalledWith({
+      expect(getPriceHistoryMock).toHaveBeenCalledWith({
         isin: 'DE0007164600',
         range: '3m',
         exchange: 'XETRA',

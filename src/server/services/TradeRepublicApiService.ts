@@ -46,7 +46,7 @@ import { TradeRepublicCredentials } from './TradeRepublicCredentials';
 const SESSION_EXPIRATION_BUFFER_MS = 30 * 1000;
 
 /** Default timeout for WebSocket subscriptions (30 seconds) */
-const DEFAULT_SUBSCRIPTION_TIMEOUT_MS = 30_000;
+const SUBSCRIPTION_TIMEOUT_MS = 30_000;
 
 /** Retry configuration per ADR-001 */
 const RETRY_CONFIG = {
@@ -450,7 +450,6 @@ export class TradeRepublicApiService {
    * @param topic - The WebSocket topic to subscribe to
    * @param payload - Optional payload to send with the subscription
    * @param schema - Zod schema to validate and transform the response
-   * @param timeoutMs - Optional timeout in milliseconds (default: 30 seconds)
    * @returns Parsed and validated response data
    * @throws TwoFactorCodeRequiredException if authentication is required
    */
@@ -462,7 +461,6 @@ export class TradeRepublicApiService {
         data: unknown,
       ) => { success: true; data: T } | { success: false; error: unknown };
     },
-    timeoutMs: number = DEFAULT_SUBSCRIPTION_TIMEOUT_MS,
   ): Promise<T> {
     // Ensure authenticated before making any API call
     await this.ensureAuthenticatedOrThrow();
@@ -556,11 +554,11 @@ export class TradeRepublicApiService {
           resolved = true;
           cleanup();
           logger.api.error(
-            `${topic} subscription timed out after ${timeoutMs}ms`,
+            `${topic} subscription timed out after ${SUBSCRIPTION_TIMEOUT_MS}ms`,
           );
           reject(new TradeRepublicError(`${topic} request timed out`));
         }
-      }, timeoutMs);
+      }, SUBSCRIPTION_TIMEOUT_MS);
 
       try {
         subscriptionId = this.subscribe({ topic, payload });

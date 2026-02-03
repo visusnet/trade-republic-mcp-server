@@ -28,13 +28,8 @@ import {
 } from './OrderService.response';
 import { OrderServiceError } from './OrderService.types';
 
-const DEFAULT_SUBSCRIPTION_TIMEOUT_MS = 30_000;
-
 export class OrderService {
-  constructor(
-    private readonly api: TradeRepublicApiService,
-    private readonly timeoutMs: number = DEFAULT_SUBSCRIPTION_TIMEOUT_MS,
-  ) {}
+  constructor(private readonly api: TradeRepublicApiService) {}
 
   public async placeOrder(
     request: PlaceOrderRequest,
@@ -48,7 +43,6 @@ export class OrderService {
       'simpleCreateOrder',
       payload,
       PlaceOrderResponseSchema,
-      this.timeoutMs,
     );
   }
 
@@ -57,12 +51,7 @@ export class OrderService {
   ): Promise<GetOrdersResponse> {
     this.ensureAuthenticated();
     logger.api.info('Requesting orders');
-    return this.api.subscribeAndWait(
-      'orders',
-      {},
-      GetOrdersResponseSchema,
-      this.timeoutMs,
-    );
+    return this.api.subscribeAndWait('orders', {}, GetOrdersResponseSchema);
   }
 
   public modifyOrder(
@@ -84,7 +73,6 @@ export class OrderService {
       'cancelOrder',
       { orderId: request.orderId },
       CancelOrderResponseSchema,
-      this.timeoutMs,
     );
   }
 
