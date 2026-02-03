@@ -333,9 +333,11 @@ describe('TradeRepublicApiService', () => {
     });
 
     it('should throw on login failure', async () => {
+      const errorBody = JSON.stringify({ message: 'Invalid credentials' });
       mockFetch.mockResolvedValue({
         ok: false,
         status: 401,
+        text: () => Promise.resolve(errorBody),
         json: () => Promise.resolve({ message: 'Invalid credentials' }),
       } as Response);
 
@@ -348,9 +350,13 @@ describe('TradeRepublicApiService', () => {
     });
 
     it('should use errorMessage from login error response', async () => {
+      const errorBody = JSON.stringify({
+        errorMessage: 'Error from errorMessage',
+      });
       mockFetch.mockResolvedValue({
         ok: false,
         status: 401,
+        text: () => Promise.resolve(errorBody),
         json: () =>
           Promise.resolve({ errorMessage: 'Error from errorMessage' }),
       } as Response);
@@ -364,9 +370,11 @@ describe('TradeRepublicApiService', () => {
     });
 
     it('should use default error message if no login error details', async () => {
+      const errorBody = JSON.stringify({});
       mockFetch.mockResolvedValue({
         ok: false,
         status: 401,
+        text: () => Promise.resolve(errorBody),
         json: () => Promise.resolve({}),
       } as Response);
 
@@ -382,7 +390,110 @@ describe('TradeRepublicApiService', () => {
       mockFetch.mockResolvedValue({
         ok: false,
         status: 401,
+        text: () => Promise.resolve('not valid json'),
         json: () => Promise.resolve('not an object'),
+      } as Response);
+
+      const promise = service.connect('5678');
+
+      await Promise.all([
+        expect(promise).rejects.toThrow('not valid json'),
+        jest.advanceTimersByTimeAsync(2000),
+      ]);
+    });
+
+    it('should extract errorCode from errors array format', async () => {
+      const errorBody = JSON.stringify({
+        errors: [
+          {
+            errorCode: 'PIN_INVALID',
+            errorMessage: null,
+            meta: { _meta_type: 'RetryMeta', nextAttemptInSeconds: 0 },
+          },
+        ],
+      });
+      mockFetch.mockResolvedValue({
+        ok: false,
+        status: 401,
+        text: () => Promise.resolve(errorBody),
+      } as Response);
+
+      const promise = service.connect('5678');
+
+      await Promise.all([
+        expect(promise).rejects.toThrow('PIN_INVALID'),
+        jest.advanceTimersByTimeAsync(2000),
+      ]);
+    });
+
+    it('should extract errorMessage from errors array if provided', async () => {
+      const errorBody = JSON.stringify({
+        errors: [
+          {
+            errorCode: 'SOME_ERROR',
+            errorMessage: 'Custom error message',
+          },
+        ],
+      });
+      mockFetch.mockResolvedValue({
+        ok: false,
+        status: 401,
+        text: () => Promise.resolve(errorBody),
+      } as Response);
+
+      const promise = service.connect('5678');
+
+      await Promise.all([
+        expect(promise).rejects.toThrow('Custom error message'),
+        jest.advanceTimersByTimeAsync(2000),
+      ]);
+    });
+
+    it('should use fallback when error has empty errorCode and no errorMessage', async () => {
+      const errorBody = JSON.stringify({
+        errors: [
+          {
+            errorCode: '',
+            errorMessage: null,
+          },
+        ],
+      });
+      mockFetch.mockResolvedValue({
+        ok: false,
+        status: 401,
+        text: () => Promise.resolve(errorBody),
+      } as Response);
+
+      const promise = service.connect('5678');
+
+      await Promise.all([
+        expect(promise).rejects.toThrow('Login failed'),
+        jest.advanceTimersByTimeAsync(2000),
+      ]);
+    });
+
+    it('should use errorText when JSON is valid but not matching schema', async () => {
+      // Array is valid JSON but doesn't match ErrorResponseSchema (which expects an object)
+      const errorBody = JSON.stringify(['not', 'an', 'object']);
+      mockFetch.mockResolvedValue({
+        ok: false,
+        status: 401,
+        text: () => Promise.resolve(errorBody),
+      } as Response);
+
+      const promise = service.connect('5678');
+
+      await Promise.all([
+        expect(promise).rejects.toThrow('["not","an","object"]'),
+        jest.advanceTimersByTimeAsync(2000),
+      ]);
+    });
+
+    it('should use default message when errorText is empty and schema fails', async () => {
+      mockFetch.mockResolvedValue({
+        ok: false,
+        status: 401,
+        text: () => Promise.resolve(''),
       } as Response);
 
       const promise = service.connect('5678');
@@ -1997,9 +2108,11 @@ describe('TradeRepublicApiService', () => {
       let callCount = 0;
       mockFetch.mockImplementation(() => {
         callCount++;
+        const errorBody = JSON.stringify({ message: 'Bad request' });
         return Promise.resolve({
           ok: false,
           status: 400,
+          text: () => Promise.resolve(errorBody),
           json: () => Promise.resolve({ message: 'Bad request' }),
         } as Response);
       });
@@ -2018,9 +2131,11 @@ describe('TradeRepublicApiService', () => {
       let callCount = 0;
       mockFetch.mockImplementation(() => {
         callCount++;
+        const errorBody = JSON.stringify({ message: 'Invalid credentials' });
         return Promise.resolve({
           ok: false,
           status: 401,
+          text: () => Promise.resolve(errorBody),
           json: () => Promise.resolve({ message: 'Invalid credentials' }),
         } as Response);
       });

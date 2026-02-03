@@ -22,6 +22,7 @@ import {
 } from './TradeRepublicApiService.request';
 import {
   ErrorResponseSchema,
+  extractErrorMessage,
   LoginResponseSchema,
   type EnterTwoFactorCodeResponse,
 } from './TradeRepublicApiService.response';
@@ -231,11 +232,21 @@ export class TradeRepublicApiService {
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
-      const parsed = ErrorResponseSchema.safeParse(errorData);
-      const message = parsed.success
-        ? parsed.data.message || parsed.data.errorMessage || 'Login failed'
-        : 'Login failed';
+      const errorText = await response.text();
+      logger.api.error(
+        { status: response.status, body: errorText },
+        'Login failed',
+      );
+      let message = 'Login failed';
+      try {
+        const parsed = ErrorResponseSchema.safeParse(JSON.parse(errorText));
+        // If JSON.parse succeeded, errorText is non-empty valid JSON
+        message = parsed.success
+          ? extractErrorMessage(parsed.data, 'Login failed')
+          : errorText;
+      } catch {
+        message = errorText || 'Login failed';
+      }
       throw new AuthenticationError(message, `HTTP_${response.status}`);
     }
 
@@ -282,12 +293,7 @@ export class TradeRepublicApiService {
 
     if (!response.ok) {
       const errorData = await response.json();
-      const parsed = ErrorResponseSchema.safeParse(errorData);
-      const message = parsed.success
-        ? parsed.data.message ||
-          parsed.data.errorMessage ||
-          '2FA verification failed'
-        : '2FA verification failed';
+      const message = extractErrorMessage(errorData, '2FA verification failed');
       throw new AuthenticationError(message, `HTTP_${response.status}`);
     }
 
@@ -333,12 +339,7 @@ export class TradeRepublicApiService {
 
     if (!response.ok) {
       const errorData = await response.json();
-      const parsed = ErrorResponseSchema.safeParse(errorData);
-      const message = parsed.success
-        ? parsed.data.message ||
-          parsed.data.errorMessage ||
-          'Session refresh failed'
-        : 'Session refresh failed';
+      const message = extractErrorMessage(errorData, 'Session refresh failed');
       throw new AuthenticationError(message, `HTTP_${response.status}`);
     }
 
