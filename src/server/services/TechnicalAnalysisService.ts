@@ -49,11 +49,10 @@ function sanitizeNumber(value: number | null): number | null {
 }
 
 export class TechnicalAnalysisService {
-  private readonly indicatorsService: TechnicalIndicatorsService;
-
-  constructor(private readonly marketDataService: MarketDataService) {
-    this.indicatorsService = new TechnicalIndicatorsService();
-  }
+  constructor(
+    private readonly marketDataService: MarketDataService,
+    private readonly indicatorsService: TechnicalIndicatorsService,
+  ) {}
 
   /**
    * Calculate specific technical indicators for an instrument.

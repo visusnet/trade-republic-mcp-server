@@ -14,6 +14,7 @@ import { RiskService } from './services/RiskService';
 import { SentimentService } from './services/SentimentService';
 import { SymbolMapper } from './services/SymbolMapper';
 import { TechnicalAnalysisService } from './services/TechnicalAnalysisService';
+import { TechnicalIndicatorsService } from './services/TechnicalIndicatorsService';
 import { TradeRepublicApiService } from './services/TradeRepublicApiService';
 import { TradeRepublicCredentials } from './services/TradeRepublicCredentials';
 import { AuthToolRegistry } from './tools/AuthToolRegistry';
@@ -38,6 +39,7 @@ export class TradeRepublicMcpServer {
   private readonly sentimentService: SentimentService;
   private readonly fundamentalsService: FundamentalsService;
   private readonly riskService: RiskService;
+  private readonly technicalIndicatorsService: TechnicalIndicatorsService;
 
   constructor(phoneNumber: string, pin: string) {
     const credentials = new TradeRepublicCredentials(phoneNumber, pin);
@@ -46,8 +48,10 @@ export class TradeRepublicMcpServer {
     // Initialize all services
     this.portfolioService = new PortfolioService(this.apiService);
     this.marketDataService = new MarketDataService(this.apiService);
+    this.technicalIndicatorsService = new TechnicalIndicatorsService();
     this.technicalAnalysisService = new TechnicalAnalysisService(
       this.marketDataService,
+      this.technicalIndicatorsService,
     );
     this.orderService = new OrderService(this.apiService);
     this.marketEventService = new MarketEventService(this.apiService);

@@ -121,9 +121,9 @@ export class TechnicalIndicatorsService {
     const lastMacd = macdValues[macdValues.length - 1];
 
     return {
-      macd: lastMacd.MACD ?? /* istanbul ignore next */ null,
-      signal: lastMacd.signal ?? null,
-      histogram: lastMacd.histogram ?? /* istanbul ignore next */ null,
+      macd: lastMacd.MACD as number,
+      signal: lastMacd.signal as number,
+      histogram: lastMacd.histogram as number,
       fastPeriod,
       slowPeriod,
       signalPeriod,
@@ -170,8 +170,7 @@ export class TechnicalIndicatorsService {
     }
 
     const lastBb = bbValues[bbValues.length - 1];
-    const bandwidth =
-      lastBb.middle > 0 ? (lastBb.upper - lastBb.lower) / lastBb.middle : null;
+    const bandwidth = (lastBb.upper - lastBb.lower) / lastBb.middle;
 
     return {
       upper: lastBb.upper,
