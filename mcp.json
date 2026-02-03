@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "default-server": {
+      "type": "streamable-http",
+      "url": "http://localhost:3005/mcp",
+      "note": "Trade Republic MCP Server"
+    }
+  }
+}

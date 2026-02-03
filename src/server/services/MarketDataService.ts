@@ -9,10 +9,6 @@
 import { logger } from '../../logger';
 import type { TradeRepublicApiService } from './TradeRepublicApiService';
 import {
-  AuthStatus,
-  TradeRepublicError,
-} from './TradeRepublicApiService.types';
-import {
   DEFAULT_EXCHANGE,
   type GetPriceRequest,
   type GetPriceHistoryRequest,
@@ -48,7 +44,6 @@ export class MarketDataService {
    * Get current price for an instrument.
    */
   public async getPrice(request: GetPriceRequest): Promise<GetPriceResponse> {
-    this.ensureAuthenticated();
     const exchange = request.exchange ?? DEFAULT_EXCHANGE;
     const tickerId = `${request.isin}.${exchange}`;
 
@@ -84,7 +79,6 @@ export class MarketDataService {
   public async getPriceHistory(
     request: GetPriceHistoryRequest,
   ): Promise<GetPriceHistoryResponse> {
-    this.ensureAuthenticated();
     const exchange = request.exchange ?? DEFAULT_EXCHANGE;
     const tickerId = `${request.isin}.${exchange}`;
 
@@ -122,7 +116,6 @@ export class MarketDataService {
   public async getOrderBook(
     request: GetOrderBookRequest,
   ): Promise<GetOrderBookResponse> {
-    this.ensureAuthenticated();
     const exchange = request.exchange ?? DEFAULT_EXCHANGE;
     const tickerId = `${request.isin}.${exchange}`;
 
@@ -156,7 +149,6 @@ export class MarketDataService {
   public async searchAssets(
     request: SearchAssetsRequest,
   ): Promise<SearchAssetsResponse> {
-    this.ensureAuthenticated();
     const limit = request.limit ?? DEFAULT_SEARCH_LIMIT;
 
     logger.api.info({ query: request.query, limit }, 'Searching assets');
@@ -187,8 +179,6 @@ export class MarketDataService {
   public async getAssetInfo(
     request: GetAssetInfoRequest,
   ): Promise<GetAssetInfoResponse> {
-    this.ensureAuthenticated();
-
     logger.api.info({ isin: request.isin }, 'Requesting asset info');
 
     const instrumentData = await this.api.subscribeAndWait(
@@ -226,7 +216,6 @@ export class MarketDataService {
   public async getMarketStatus(
     request: GetMarketStatusRequest,
   ): Promise<GetMarketStatusResponse> {
-    this.ensureAuthenticated();
     const exchange = request.exchange ?? DEFAULT_EXCHANGE;
     const tickerId = `${request.isin}.${exchange}`;
 
@@ -269,7 +258,6 @@ export class MarketDataService {
   public async waitForMarket(
     request: WaitForMarketRequest,
   ): Promise<WaitForMarketResponse> {
-    this.ensureAuthenticated();
     const exchange = request.exchange ?? DEFAULT_EXCHANGE;
     const timeoutMs = request.timeoutMs ?? DEFAULT_WAIT_TIMEOUT_MS;
     const pollIntervalMs = request.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
@@ -318,15 +306,6 @@ export class MarketDataService {
       timedOut,
       timestamp: new Date().toISOString(),
     };
-  }
-
-  /**
-   * Ensure the API service is authenticated.
-   */
-  private ensureAuthenticated(): void {
-    if (this.api.getAuthStatus() !== AuthStatus.AUTHENTICATED) {
-      throw new TradeRepublicError('Not authenticated');
-    }
   }
 
   /**

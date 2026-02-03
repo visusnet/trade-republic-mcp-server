@@ -10,10 +10,7 @@ jest.mock('../../logger', () => ({
 
 import { PortfolioService } from './PortfolioService';
 import type { TradeRepublicApiService } from './TradeRepublicApiService';
-import {
-  AuthStatus,
-  TradeRepublicError,
-} from './TradeRepublicApiService.types';
+import { TradeRepublicError } from './TradeRepublicApiService.types';
 import {
   GetPortfolioResponseSchema,
   GetCashBalanceResponseSchema,
@@ -165,9 +162,6 @@ describe('PortfolioService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockTradeRepublicApiService.getAuthStatus.mockReturnValue(
-      AuthStatus.AUTHENTICATED,
-    );
     mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue({} as never);
     service = new PortfolioService(
       mockTradeRepublicApiService as unknown as TradeRepublicApiService,
@@ -175,15 +169,6 @@ describe('PortfolioService', () => {
   });
 
   describe('getPortfolio', () => {
-    it('should throw if not authenticated', async () => {
-      mockTradeRepublicApiService.getAuthStatus.mockReturnValue(
-        AuthStatus.UNAUTHENTICATED,
-      );
-
-      await expect(service.getPortfolio()).rejects.toThrow(TradeRepublicError);
-      await expect(service.getPortfolio()).rejects.toThrow('Not authenticated');
-    });
-
     it('should call subscribeAndWait with correct parameters', async () => {
       const portfolioData = {
         positions: [
@@ -253,19 +238,6 @@ describe('PortfolioService', () => {
   });
 
   describe('getCashBalance', () => {
-    it('should throw if not authenticated', async () => {
-      mockTradeRepublicApiService.getAuthStatus.mockReturnValue(
-        AuthStatus.UNAUTHENTICATED,
-      );
-
-      await expect(service.getCashBalance()).rejects.toThrow(
-        TradeRepublicError,
-      );
-      await expect(service.getCashBalance()).rejects.toThrow(
-        'Not authenticated',
-      );
-    });
-
     it('should call subscribeAndWait with correct parameters', async () => {
       const cashData = { availableCash: 1000, currency: 'EUR' };
       mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue(cashData);

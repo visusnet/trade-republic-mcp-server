@@ -17,10 +17,7 @@ import {
 } from './OrderService.types';
 import { OrderService } from './OrderService';
 import type { TradeRepublicApiService } from './TradeRepublicApiService';
-import {
-  AuthStatus,
-  TradeRepublicError,
-} from './TradeRepublicApiService.types';
+import { TradeRepublicError } from './TradeRepublicApiService.types';
 import {
   PlaceOrderResponseSchema,
   GetOrdersResponseSchema,
@@ -483,9 +480,6 @@ describe('OrderService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockTradeRepublicApiService.getAuthStatus.mockReturnValue(
-      AuthStatus.AUTHENTICATED,
-    );
     mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue({} as never);
     service = new OrderService(
       mockTradeRepublicApiService as unknown as TradeRepublicApiService,
@@ -493,29 +487,6 @@ describe('OrderService', () => {
   });
 
   describe('placeOrder', () => {
-    it('should throw if not authenticated', async () => {
-      mockTradeRepublicApiService.getAuthStatus.mockReturnValue(
-        AuthStatus.UNAUTHENTICATED,
-      );
-
-      await expect(
-        service.placeOrder({
-          isin: 'DE0007164600',
-          orderType: 'buy',
-          mode: 'market',
-          size: 10,
-        }),
-      ).rejects.toThrow(TradeRepublicError);
-      await expect(
-        service.placeOrder({
-          isin: 'DE0007164600',
-          orderType: 'buy',
-          mode: 'market',
-          size: 10,
-        }),
-      ).rejects.toThrow('Not authenticated');
-    });
-
     it('should throw OrderValidationError for limit order without limitPrice', async () => {
       await expect(
         service.placeOrder({
@@ -868,15 +839,6 @@ describe('OrderService', () => {
   });
 
   describe('getOrders', () => {
-    it('should throw if not authenticated', async () => {
-      mockTradeRepublicApiService.getAuthStatus.mockReturnValue(
-        AuthStatus.UNAUTHENTICATED,
-      );
-
-      await expect(service.getOrders()).rejects.toThrow(TradeRepublicError);
-      await expect(service.getOrders()).rejects.toThrow('Not authenticated');
-    });
-
     it('should call subscribeAndWait with correct parameters', async () => {
       const ordersResponse = {
         orders: [],
@@ -948,19 +910,6 @@ describe('OrderService', () => {
   });
 
   describe('cancelOrder', () => {
-    it('should throw if not authenticated', async () => {
-      mockTradeRepublicApiService.getAuthStatus.mockReturnValue(
-        AuthStatus.UNAUTHENTICATED,
-      );
-
-      await expect(
-        service.cancelOrder({ orderId: 'order-123' }),
-      ).rejects.toThrow(TradeRepublicError);
-      await expect(
-        service.cancelOrder({ orderId: 'order-123' }),
-      ).rejects.toThrow('Not authenticated');
-    });
-
     it('should call subscribeAndWait with correct parameters', async () => {
       const cancelResponse = {
         orderId: 'order-123',
@@ -1024,25 +973,6 @@ describe('OrderService', () => {
   });
 
   describe('modifyOrder', () => {
-    it('should throw if not authenticated', () => {
-      mockTradeRepublicApiService.getAuthStatus.mockReturnValue(
-        AuthStatus.UNAUTHENTICATED,
-      );
-
-      expect(() =>
-        service.modifyOrder({
-          orderId: 'order-123',
-          limitPrice: 150.0,
-        }),
-      ).toThrow(TradeRepublicError);
-      expect(() =>
-        service.modifyOrder({
-          orderId: 'order-123',
-          limitPrice: 150.0,
-        }),
-      ).toThrow('Not authenticated');
-    });
-
     it('should throw NOT_SUPPORTED error', () => {
       expect(() =>
         service.modifyOrder({

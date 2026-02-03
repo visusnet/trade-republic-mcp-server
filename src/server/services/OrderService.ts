@@ -7,10 +7,6 @@
 
 import { logger } from '../../logger';
 import type { TradeRepublicApiService } from './TradeRepublicApiService';
-import {
-  AuthStatus,
-  TradeRepublicError,
-} from './TradeRepublicApiService.types';
 import type {
   PlaceOrderRequest,
   GetOrdersRequest,
@@ -34,7 +30,6 @@ export class OrderService {
   public async placeOrder(
     request: PlaceOrderRequest,
   ): Promise<PlaceOrderResponse> {
-    this.ensureAuthenticated();
     this.validatePlaceOrderRequest(request);
     logger.api.info({ request }, 'Placing order');
 
@@ -50,7 +45,6 @@ export class OrderService {
   public async getOrders(
     _request?: GetOrdersRequest,
   ): Promise<GetOrdersResponse> {
-    this.ensureAuthenticated();
     logger.api.info('Requesting orders');
     return this.api.subscribeAndWait('orders', {}, GetOrdersResponseSchema);
   }
@@ -58,7 +52,6 @@ export class OrderService {
   public modifyOrder(
     _request: ModifyOrderRequest,
   ): Promise<ModifyOrderResponse> {
-    this.ensureAuthenticated();
     throw new OrderServiceError(
       'Order modification is not supported by Trade Republic API. Please cancel the order and place a new one.',
       'NOT_SUPPORTED',
@@ -68,20 +61,12 @@ export class OrderService {
   public async cancelOrder(
     request: CancelOrderRequest,
   ): Promise<CancelOrderResponse> {
-    this.ensureAuthenticated();
     logger.api.info({ orderId: request.orderId }, 'Cancelling order');
     return this.api.subscribeAndWait(
       'cancelOrder',
       { orderId: request.orderId },
       CancelOrderResponseSchema,
     );
-  }
-
-  private ensureAuthenticated(): void {
-    const authStatus = this.api.getAuthStatus();
-    if (authStatus !== AuthStatus.AUTHENTICATED) {
-      throw new TradeRepublicError('Not authenticated');
-    }
   }
 
   private validatePlaceOrderRequest(request: PlaceOrderRequest): void {

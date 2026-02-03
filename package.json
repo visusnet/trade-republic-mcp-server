@@ -13,6 +13,7 @@
     "build:watch": "rollup -c --watch",
     "start": "node dist/index.js",
     "start:dev": "tsx --watch src/index.ts",
+    "inspect": "CLIENT_PORT=3000 npx @modelcontextprotocol/inspector@latest --config mcp.json",
     "test": "jest",
     "test:coverage": "jest --coverage",
     "test:watch": "jest --watch",

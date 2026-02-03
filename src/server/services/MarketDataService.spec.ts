@@ -10,10 +10,7 @@ jest.mock('../../logger', () => ({
 
 import { MarketDataService } from './MarketDataService';
 import type { TradeRepublicApiService } from './TradeRepublicApiService';
-import {
-  AuthStatus,
-  TradeRepublicError,
-} from './TradeRepublicApiService.types';
+import { TradeRepublicError } from './TradeRepublicApiService.types';
 import {
   TickerApiResponseSchema,
   AggregateHistoryApiSchema,
@@ -54,9 +51,6 @@ describe('MarketDataService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockTradeRepublicApiService.getAuthStatus.mockReturnValue(
-      AuthStatus.AUTHENTICATED,
-    );
     service = new MarketDataService(
       mockTradeRepublicApiService as unknown as TradeRepublicApiService,
     );
@@ -66,19 +60,6 @@ describe('MarketDataService', () => {
   // getPrice Tests
   // ==========================================================================
   describe('getPrice', () => {
-    it('should throw if not authenticated', async () => {
-      mockTradeRepublicApiService.getAuthStatus.mockReturnValue(
-        AuthStatus.UNAUTHENTICATED,
-      );
-
-      await expect(service.getPrice({ isin: 'DE0007164600' })).rejects.toThrow(
-        TradeRepublicError,
-      );
-      await expect(service.getPrice({ isin: 'DE0007164600' })).rejects.toThrow(
-        'Not authenticated',
-      );
-    });
-
     it('should call subscribeAndWait with correct parameters using default exchange', async () => {
       const tickerData = {
         bid: { price: 100.5, size: 1000 },
@@ -183,16 +164,6 @@ describe('MarketDataService', () => {
   // getPriceHistory Tests
   // ==========================================================================
   describe('getPriceHistory', () => {
-    it('should throw if not authenticated', async () => {
-      mockTradeRepublicApiService.getAuthStatus.mockReturnValue(
-        AuthStatus.UNAUTHENTICATED,
-      );
-
-      await expect(
-        service.getPriceHistory({ isin: 'DE0007164600', range: '1d' }),
-      ).rejects.toThrow(TradeRepublicError);
-    });
-
     it('should call subscribeAndWait with correct parameters', async () => {
       const historyData = {
         aggregates: [],
@@ -254,16 +225,6 @@ describe('MarketDataService', () => {
   // getOrderBook Tests
   // ==========================================================================
   describe('getOrderBook', () => {
-    it('should throw if not authenticated', async () => {
-      mockTradeRepublicApiService.getAuthStatus.mockReturnValue(
-        AuthStatus.UNAUTHENTICATED,
-      );
-
-      await expect(
-        service.getOrderBook({ isin: 'DE0007164600' }),
-      ).rejects.toThrow(TradeRepublicError);
-    });
-
     it('should call subscribeAndWait with correct parameters', async () => {
       const tickerData = {
         bid: { price: 100.5, size: 1000 },
@@ -307,16 +268,6 @@ describe('MarketDataService', () => {
   // searchAssets Tests
   // ==========================================================================
   describe('searchAssets', () => {
-    it('should throw if not authenticated', async () => {
-      mockTradeRepublicApiService.getAuthStatus.mockReturnValue(
-        AuthStatus.UNAUTHENTICATED,
-      );
-
-      await expect(service.searchAssets({ query: 'apple' })).rejects.toThrow(
-        TradeRepublicError,
-      );
-    });
-
     it('should call subscribeAndWait with correct parameters', async () => {
       const searchData = { results: [] };
       mockTradeRepublicApiService.subscribeAndWait.mockResolvedValue(
@@ -378,16 +329,6 @@ describe('MarketDataService', () => {
   // getAssetInfo Tests
   // ==========================================================================
   describe('getAssetInfo', () => {
-    it('should throw if not authenticated', async () => {
-      mockTradeRepublicApiService.getAuthStatus.mockReturnValue(
-        AuthStatus.UNAUTHENTICATED,
-      );
-
-      await expect(
-        service.getAssetInfo({ isin: 'DE0007164600' }),
-      ).rejects.toThrow(TradeRepublicError);
-    });
-
     it('should call subscribeAndWait with correct parameters', async () => {
       const instrumentData = {
         isin: 'DE0007164600',
@@ -448,16 +389,6 @@ describe('MarketDataService', () => {
   // getMarketStatus Tests
   // ==========================================================================
   describe('getMarketStatus', () => {
-    it('should throw if not authenticated', async () => {
-      mockTradeRepublicApiService.getAuthStatus.mockReturnValue(
-        AuthStatus.UNAUTHENTICATED,
-      );
-
-      await expect(
-        service.getMarketStatus({ isin: 'DE0007164600' }),
-      ).rejects.toThrow(TradeRepublicError);
-    });
-
     it('should call subscribeAndWait with correct parameters', async () => {
       const tickerData = {
         bid: { price: 100.5, size: 1000 },
@@ -534,16 +465,6 @@ describe('MarketDataService', () => {
   // waitForMarket Tests
   // ==========================================================================
   describe('waitForMarket', () => {
-    it('should throw if not authenticated', async () => {
-      mockTradeRepublicApiService.getAuthStatus.mockReturnValue(
-        AuthStatus.UNAUTHENTICATED,
-      );
-
-      await expect(
-        service.waitForMarket({ isin: 'DE0007164600' }),
-      ).rejects.toThrow(TradeRepublicError);
-    });
-
     it('should return immediately if market is already open', async () => {
       const tickerData = {
         bid: { price: 100.5, size: 1000 },
