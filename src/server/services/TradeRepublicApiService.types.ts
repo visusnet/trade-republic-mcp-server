@@ -156,12 +156,6 @@ export interface WebSocketOptions {
   headers?: Record<string, string>;
 }
 
-/** WebSocket factory function type */
-export type WebSocketFactory = (
-  url: string,
-  options?: WebSocketOptions,
-) => WebSocket;
-
 /** WebSocket event types for undici/browser API */
 export interface WebSocketOpenEvent {
   type: 'open';

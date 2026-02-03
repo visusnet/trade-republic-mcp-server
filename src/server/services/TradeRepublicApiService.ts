@@ -10,7 +10,6 @@ import path from 'node:path';
 
 import pRetry from 'p-retry';
 import pThrottle from 'p-throttle';
-import { WebSocket as UndiciWebSocket } from 'undici';
 
 import { logger } from '../../logger';
 import { CryptoManager } from './TradeRepublicApiService.crypto';
@@ -39,7 +38,6 @@ import {
   type KeyPair,
   type StoredCookie,
   type WebSocketMessage,
-  type WebSocketOptions,
 } from './TradeRepublicApiService.types';
 import { WebSocketManager } from './TradeRepublicApiService.websocket';
 import { TradeRepublicCredentials } from './TradeRepublicCredentials';
@@ -97,16 +95,8 @@ export class TradeRepublicApiService {
     const configDir = path.join(os.homedir(), DEFAULT_CONFIG_DIR);
     this.cryptoManager = new CryptoManager(configDir);
 
-    // Initialize WebSocketManager with undici WebSocket factory
-    /* istanbul ignore next -- @preserve Factory callback only invoked by WebSocketManager internals */
-    this.webSocketManager = new WebSocketManager(
-      (url: string, options?: WebSocketOptions) => {
-        return new UndiciWebSocket(
-          url,
-          options,
-        ) as unknown as import('./TradeRepublicApiService.types').WebSocket;
-      },
-    );
+    // Initialize WebSocketManager
+    this.webSocketManager = new WebSocketManager();
 
     // Rate limit: 1 request per second (per ADR-001)
     const throttle = pThrottle({ limit: 1, interval: 1000 });
@@ -187,10 +177,8 @@ export class TradeRepublicApiService {
       await this.verify2FA(validationResult.data.code);
       return { message: 'Authentication successful' };
     } catch (error) {
-      /* istanbul ignore next -- @preserve Defensive fallback: p-retry wraps non-Errors */
-      const errorMessage =
-        error instanceof Error ? error.message : '2FA verification failed';
-      return { message: errorMessage };
+      // p-retry guarantees all thrown values are Error instances
+      return { message: (error as Error).message };
     }
   }
 
@@ -254,24 +242,15 @@ export class TradeRepublicApiService {
 
   /**
    * Completes 2FA verification with the code received via SMS.
+   * Precondition: Must be called when authStatus === AWAITING_2FA (ensured by callers)
    */
   private async verify2FA(code: string): Promise<void> {
-    this.ensureInitialized();
-
-    /* istanbul ignore if -- @preserve Defensive guard: unreachable via public API (connect always calls login first) */
-    if (this.authStatus !== AuthStatus.AWAITING_2FA) {
-      throw new AuthenticationError('Not awaiting 2FA verification');
-    }
+    const keyPair = this.ensureInitialized();
 
     logger.api.info('Verifying 2FA code');
 
-    // Get public key as base64 (keyPair is guaranteed to exist after ensureInitialized)
-    /* istanbul ignore if -- @preserve Defensive null check */
-    if (!this.keyPair) {
-      throw new TradeRepublicError('Key pair not initialized');
-    }
     const publicKeyBase64 = this.cryptoManager.getPublicKeyBase64(
-      this.keyPair.publicKeyPem,
+      keyPair.publicKeyPem,
     );
 
     const response = await this.throttledFetch(
@@ -321,14 +300,10 @@ export class TradeRepublicApiService {
   /**
    * Refreshes the session using cookies.
    * Per pytr: uses GET request with cookies, refreshes cookies from response.
+   * Precondition: Called only from ensureValidSession which guarantees auth status.
    */
   private async refreshSession(): Promise<void> {
     this.ensureInitialized();
-
-    /* istanbul ignore if -- defensive guard, ensureValidSession guarantees auth */
-    if (this.authStatus !== AuthStatus.AUTHENTICATED || !this.hasCookies()) {
-      throw new AuthenticationError('Not authenticated');
-    }
 
     logger.api.info('Refreshing session');
 
@@ -372,7 +347,7 @@ export class TradeRepublicApiService {
   private async ensureValidSession(): Promise<void> {
     this.ensureInitialized();
 
-    /* istanbul ignore if -- @preserve Defensive guard: ensureInitialized guarantees auth via connect */
+    // Throw if initialized but not authenticated (e.g., validateSession called after 2FA initiated)
     if (this.authStatus !== AuthStatus.AUTHENTICATED || !this.hasCookies()) {
       throw new AuthenticationError('Not authenticated');
     }
@@ -551,7 +526,7 @@ export class TradeRepublicApiService {
       };
 
       const errorHandler = (error: Error | WebSocketMessage): void => {
-        /* istanbul ignore if -- race condition guard */
+        // Guard against race condition: error arrives after message resolved
         if (resolved) {
           return;
         }
@@ -567,7 +542,6 @@ export class TradeRepublicApiService {
             | undefined;
           reject(
             new TradeRepublicError(
-              /* istanbul ignore next -- fallback branch */
               errorPayload?.message || String(error.payload),
             ),
           );
@@ -597,7 +571,6 @@ export class TradeRepublicApiService {
       } catch (error) {
         resolved = true;
         cleanup();
-        /* istanbul ignore else -- non-Error throws are unlikely */
         if (error instanceof Error) {
           reject(error);
         } else {
@@ -658,13 +631,15 @@ export class TradeRepublicApiService {
 
   /**
    * Ensures the service has been initialized.
+   * Returns the keyPair to provide type-safe access.
    */
-  private ensureInitialized(): void {
+  private ensureInitialized(): KeyPair {
     if (!this.initialized || !this.keyPair) {
       throw new TradeRepublicError(
         'Service not initialized. Call initialize() first.',
       );
     }
+    return this.keyPair;
   }
 
   /**

@@ -13,21 +13,19 @@ import { mockLogger } from '@test/loggerMock';
 import {
   ConnectionStatus,
   MESSAGE_CODE,
+  TR_WS_URL,
   type WebSocket,
   type WebSocketCloseEvent,
   type WebSocketErrorEvent,
   type WebSocketMessage,
   type WebSocketMessageEvent,
   type WebSocketOpenEvent,
-  type WebSocketOptions,
 } from './TradeRepublicApiService.types';
 
 const logger = mockLogger();
 jest.mock('../../logger', () => ({
   logger,
 }));
-
-import { WebSocketManager } from './TradeRepublicApiService.websocket';
 
 /** Extended mock interface for testing with mutable readyState */
 interface MockWebSocket extends WebSocket {
@@ -36,6 +34,8 @@ interface MockWebSocket extends WebSocket {
   emit: (event: string, eventData?: unknown) => boolean;
 }
 
+let mockWs: MockWebSocket;
+
 /**
  * Creates a mock WebSocket for testing with addEventListener API
  */
@@ -43,14 +43,14 @@ function createMockWebSocket(): MockWebSocket {
   const emitter = new EventEmitter();
   let readyStateValue = 0;
 
-  const mockWs: MockWebSocket = {
+  const ws: MockWebSocket = {
     _readyState: 0,
     get readyState(): number {
       return readyStateValue;
     },
     setReadyState(state: number): void {
       readyStateValue = state;
-      mockWs._readyState = state;
+      ws._readyState = state;
     },
     OPEN: 1,
     CLOSED: 3,
@@ -72,63 +72,60 @@ function createMockWebSocket(): MockWebSocket {
       emitter.emit(event, eventData),
   };
 
-  return mockWs;
+  return ws;
 }
+
+// Mock undici WebSocket - implementation returns current mockWs
+const MockedWebSocket = jest.fn(() => mockWs);
+jest.mock('undici', () => ({
+  WebSocket: MockedWebSocket,
+}));
+
+import { WebSocketManager } from './TradeRepublicApiService.websocket';
 
 /**
  * Helper to emit a message event in the new format
  */
-function emitMessage(mockWs: MockWebSocket, data: string | Buffer): boolean {
+function emitMessage(ws: MockWebSocket, data: string | Buffer): boolean {
   const event: WebSocketMessageEvent = { type: 'message', data };
-  return mockWs.emit('message', event);
+  return ws.emit('message', event);
 }
 
 /**
  * Helper to emit an open event
  */
-function emitOpen(mockWs: MockWebSocket): boolean {
+function emitOpen(ws: MockWebSocket): boolean {
   const event: WebSocketOpenEvent = { type: 'open' };
-  return mockWs.emit('open', event);
+  return ws.emit('open', event);
 }
 
 /**
  * Helper to emit a close event
  */
-function emitClose(
-  mockWs: MockWebSocket,
-  code: number,
-  reason: string,
-): boolean {
+function emitClose(ws: MockWebSocket, code: number, reason: string): boolean {
   const event: WebSocketCloseEvent = { type: 'close', code, reason };
-  return mockWs.emit('close', event);
+  return ws.emit('close', event);
 }
 
 /**
  * Helper to emit an error event
  */
-function emitError(mockWs: MockWebSocket, error: Error): boolean {
+function emitError(ws: MockWebSocket, error: Error): boolean {
   const event: WebSocketErrorEvent = {
     type: 'error',
     error,
     message: error.message,
   };
-  return mockWs.emit('error', event);
+  return ws.emit('error', event);
 }
 
 describe('WebSocketManager', () => {
-  let mockWs: MockWebSocket;
-  let mockWsFactory: jest.Mock<
-    (url: string, options?: WebSocketOptions) => WebSocket
-  >;
   let wsManager: WebSocketManager;
 
   beforeEach(() => {
     mockWs = createMockWebSocket();
-    mockWsFactory = jest.fn(
-      (_url: string, _options?: WebSocketOptions) =>
-        mockWs as unknown as WebSocket,
-    );
-    wsManager = new WebSocketManager(mockWsFactory);
+    MockedWebSocket.mockClear();
+    wsManager = new WebSocketManager();
   });
 
   afterEach(() => {
@@ -146,11 +143,10 @@ describe('WebSocketManager', () => {
 
       await connectPromise;
 
-      expect(mockWsFactory).toHaveBeenCalled();
       expect(wsManager.getStatus()).toBe(ConnectionStatus.CONNECTED);
     });
 
-    it('should pass cookie header to WebSocket factory', async () => {
+    it('should pass cookie header to WebSocket constructor', async () => {
       const cookieHeader = 'session=test-cookie; other=value';
       const connectPromise = wsManager.connect(cookieHeader);
 
@@ -159,8 +155,8 @@ describe('WebSocketManager', () => {
 
       await connectPromise;
 
-      expect(mockWsFactory).toHaveBeenCalledWith(
-        expect.any(String),
+      expect(MockedWebSocket).toHaveBeenCalledWith(
+        TR_WS_URL,
         expect.objectContaining({
           headers: { Cookie: cookieHeader },
         }),
@@ -175,7 +171,7 @@ describe('WebSocketManager', () => {
 
       await connectPromise;
 
-      expect(mockWsFactory).toHaveBeenCalledWith(expect.any(String), {});
+      expect(MockedWebSocket).toHaveBeenCalledWith(TR_WS_URL, {});
     });
 
     it('should send connection message without sessionToken', async () => {
@@ -744,10 +740,9 @@ describe('WebSocketManager', () => {
       // Disconnect
       wsManager.disconnect();
 
-      // Reconnect
+      // Reconnect with new manager and mock
       mockWs = createMockWebSocket();
-      mockWsFactory = jest.fn(() => mockWs as unknown as WebSocket);
-      wsManager = new WebSocketManager(mockWsFactory);
+      wsManager = new WebSocketManager();
       const reconnectPromise = wsManager.connect('test-session-token');
       mockWs.setReadyState(mockWs.OPEN);
       emitOpen(mockWs);
@@ -914,12 +909,15 @@ describe('WebSocketManager', () => {
 
       expect(wsManager.getStatus()).toBe(ConnectionStatus.CONNECTED);
 
+      // Keep reference to old socket for emitting close
+      const oldMockWs = mockWs;
+
       // Create new mock for reconnection BEFORE triggering close
       const newMockWs = createMockWebSocket();
-      mockWsFactory.mockReturnValue(newMockWs as unknown as WebSocket);
+      mockWs = newMockWs;
 
       // Simulate unexpected close - this triggers attemptReconnect()
-      emitClose(mockWs, 1006, 'Abnormal closure');
+      emitClose(oldMockWs, 1006, 'Abnormal closure');
 
       // After close, status should be DISCONNECTED (before reconnect)
       expect(wsManager.getStatus()).toBe(ConnectionStatus.DISCONNECTED);
@@ -954,7 +952,7 @@ describe('WebSocketManager', () => {
 
       // Create new mock for reconnection
       const newMockWs = createMockWebSocket();
-      mockWsFactory.mockReturnValue(newMockWs as unknown as WebSocket);
+      mockWs = newMockWs;
 
       // Advance time to trigger heartbeat timeout (40s)
       await jest.advanceTimersByTimeAsync(40_000);
@@ -989,23 +987,26 @@ describe('WebSocketManager', () => {
       emitOpen(mockWs);
       await connectPromise;
 
-      const initialFactoryCalls = mockWsFactory.mock.calls.length;
+      const initialConstructorCalls = MockedWebSocket.mock.calls.length;
+      const oldMockWs = mockWs;
 
       // Create failing mock WebSocket
       const failingWs = createMockWebSocket();
-      mockWsFactory.mockReturnValue(failingWs as unknown as WebSocket);
+      mockWs = failingWs;
 
       // Simulate unexpected close
-      emitClose(mockWs, 1006, 'Abnormal closure');
+      emitClose(oldMockWs, 1006, 'Abnormal closure');
 
       // First attempt after 1s (1000 * 2^0)
       // Advance 999ms - no call yet
       await jest.advanceTimersByTimeAsync(999);
-      expect(mockWsFactory.mock.calls.length).toBe(initialFactoryCalls);
+      expect(MockedWebSocket.mock.calls.length).toBe(initialConstructorCalls);
 
       // Advance 1ms more - first reconnect attempt starts
       await jest.advanceTimersByTimeAsync(1);
-      expect(mockWsFactory.mock.calls.length).toBe(initialFactoryCalls + 1);
+      expect(MockedWebSocket.mock.calls.length).toBe(
+        initialConstructorCalls + 1,
+      );
 
       // Fail the connection via close (simpler than error for testing)
       emitClose(failingWs, 1006, 'Connection failed');
@@ -1013,10 +1014,12 @@ describe('WebSocketManager', () => {
 
       // Second attempt after 2s (1000 * 2^1)
       const failingWs2 = createMockWebSocket();
-      mockWsFactory.mockReturnValue(failingWs2 as unknown as WebSocket);
+      mockWs = failingWs2;
 
       await jest.advanceTimersByTimeAsync(2000);
-      expect(mockWsFactory.mock.calls.length).toBe(initialFactoryCalls + 2);
+      expect(MockedWebSocket.mock.calls.length).toBe(
+        initialConstructorCalls + 2,
+      );
 
       // Fail the connection
       emitClose(failingWs2, 1006, 'Connection failed');
@@ -1024,10 +1027,12 @@ describe('WebSocketManager', () => {
 
       // Third attempt after 4s (1000 * 2^2)
       const failingWs3 = createMockWebSocket();
-      mockWsFactory.mockReturnValue(failingWs3 as unknown as WebSocket);
+      mockWs = failingWs3;
 
       await jest.advanceTimersByTimeAsync(4000);
-      expect(mockWsFactory.mock.calls.length).toBe(initialFactoryCalls + 3);
+      expect(MockedWebSocket.mock.calls.length).toBe(
+        initialConstructorCalls + 3,
+      );
 
       // Success on third attempt
       failingWs3.setReadyState(failingWs3.OPEN);
@@ -1047,14 +1052,16 @@ describe('WebSocketManager', () => {
       emitOpen(mockWs);
       await connectPromise;
 
+      const oldMockWs = mockWs;
+
       // Simulate unexpected close
-      emitClose(mockWs, 1006, 'Abnormal closure');
+      emitClose(oldMockWs, 1006, 'Abnormal closure');
 
       // Go through all 5 attempts with exponential backoff
       const delays = [1000, 2000, 4000, 8000, 16000];
       for (const delay of delays) {
         const failingWs = createMockWebSocket();
-        mockWsFactory.mockReturnValue(failingWs as unknown as WebSocket);
+        mockWs = failingWs;
 
         await jest.advanceTimersByTimeAsync(delay);
         emitClose(failingWs, 1006, 'Connection failed');
@@ -1091,12 +1098,14 @@ describe('WebSocketManager', () => {
       const subId1 = wsManager.subscribe('ticker', { isin: 'DE0007164600' });
       const subId2 = wsManager.subscribe('portfolio');
 
+      const oldMockWs = mockWs;
+
       // Create new mock for reconnection
       const newMockWs = createMockWebSocket();
-      mockWsFactory.mockReturnValue(newMockWs as unknown as WebSocket);
+      mockWs = newMockWs;
 
       // Simulate unexpected close
-      emitClose(mockWs, 1006, 'Abnormal closure');
+      emitClose(oldMockWs, 1006, 'Abnormal closure');
 
       // Advance timer past first reconnect delay (1s)
       await jest.advanceTimersByTimeAsync(1000);
@@ -1146,14 +1155,14 @@ describe('WebSocketManager', () => {
       // Intentional disconnect
       wsManager.disconnect();
 
-      // Factory should not be called again
-      const factoryCallCount = mockWsFactory.mock.calls.length;
+      // Constructor should not be called again
+      const constructorCallCount = MockedWebSocket.mock.calls.length;
 
       // Advance time well past any reconnect delays
       await jest.advanceTimersByTimeAsync(60_000);
 
       // Should not have attempted to reconnect
-      expect(mockWsFactory.mock.calls.length).toBe(factoryCallCount);
+      expect(MockedWebSocket.mock.calls.length).toBe(constructorCallCount);
       expect(reconnectedHandler).not.toHaveBeenCalled();
     });
 
@@ -1167,12 +1176,14 @@ describe('WebSocketManager', () => {
       emitOpen(mockWs);
       await connectPromise;
 
+      const oldMockWs = mockWs;
+
       // Create new mock for reconnection
       const newMockWs = createMockWebSocket();
-      mockWsFactory.mockReturnValue(newMockWs as unknown as WebSocket);
+      mockWs = newMockWs;
 
       // Simulate unexpected close
-      emitClose(mockWs, 1006, 'Abnormal closure');
+      emitClose(oldMockWs, 1006, 'Abnormal closure');
 
       // Advance timer past first reconnect delay (1s)
       await jest.advanceTimersByTimeAsync(1000);
@@ -1205,12 +1216,14 @@ describe('WebSocketManager', () => {
       const subId = wsManager.subscribe('ticker');
       emitMessage(mockWs, Buffer.from(`${subId} A {"price":100}`));
 
+      const oldMockWs = mockWs;
+
       // Create new mock for reconnection
       const newMockWs = createMockWebSocket();
-      mockWsFactory.mockReturnValue(newMockWs as unknown as WebSocket);
+      mockWs = newMockWs;
 
       // Simulate unexpected close
-      emitClose(mockWs, 1006, 'Abnormal closure');
+      emitClose(oldMockWs, 1006, 'Abnormal closure');
 
       // Advance timer past first reconnect delay (1s)
       await jest.advanceTimersByTimeAsync(1000);
@@ -1244,12 +1257,14 @@ describe('WebSocketManager', () => {
       emitOpen(mockWs);
       await connectPromise;
 
+      const oldMockWs = mockWs;
+
       // Fail first reconnect attempt
       const failingWs = createMockWebSocket();
-      mockWsFactory.mockReturnValue(failingWs as unknown as WebSocket);
+      mockWs = failingWs;
 
       // Simulate unexpected close
-      emitClose(mockWs, 1006, 'Abnormal closure');
+      emitClose(oldMockWs, 1006, 'Abnormal closure');
 
       // First attempt after 1s
       await jest.advanceTimersByTimeAsync(1000);
@@ -1258,7 +1273,7 @@ describe('WebSocketManager', () => {
 
       // Second attempt after 2s - this one succeeds
       const successWs = createMockWebSocket();
-      mockWsFactory.mockReturnValue(successWs as unknown as WebSocket);
+      mockWs = successWs;
       await jest.advanceTimersByTimeAsync(2000);
       successWs.setReadyState(successWs.OPEN);
       emitOpen(successWs);
@@ -1272,17 +1287,19 @@ describe('WebSocketManager', () => {
 
       // Now trigger another disconnect - the first reconnect delay should be 1s (not 4s)
       const newFailingWs = createMockWebSocket();
-      mockWsFactory.mockReturnValue(newFailingWs as unknown as WebSocket);
+      mockWs = newFailingWs;
 
       emitClose(successWs, 1006, 'Abnormal closure');
 
-      const factoryCallsBefore = mockWsFactory.mock.calls.length;
+      const constructorCallsBefore = MockedWebSocket.mock.calls.length;
 
       // If reconnectAttempts was reset, delay should be 1s (2^0 * 1000)
       await jest.advanceTimersByTimeAsync(1000);
 
       // Should have attempted reconnect after 1s
-      expect(mockWsFactory.mock.calls.length).toBe(factoryCallsBefore + 1);
+      expect(MockedWebSocket.mock.calls.length).toBe(
+        constructorCallsBefore + 1,
+      );
     });
 
     it('should reset isIntentionalDisconnect on new connect call', async () => {
@@ -1300,7 +1317,7 @@ describe('WebSocketManager', () => {
 
       // Create new mock for next connection
       const newMockWs = createMockWebSocket();
-      mockWsFactory.mockReturnValue(newMockWs as unknown as WebSocket);
+      mockWs = newMockWs;
 
       // Now explicitly reconnect - isIntentionalDisconnect should be reset
       const reconnectPromise = wsManager.connect('session=test-cookie');
@@ -1315,18 +1332,20 @@ describe('WebSocketManager', () => {
 
       // Create another mock for reconnection after unexpected close
       const newerMockWs = createMockWebSocket();
-      mockWsFactory.mockReturnValue(newerMockWs as unknown as WebSocket);
+      mockWs = newerMockWs;
 
       // Simulate unexpected close - should trigger auto-reconnect now
       emitClose(newMockWs, 1006, 'Abnormal closure');
 
-      const factoryCallsBefore = mockWsFactory.mock.calls.length;
+      const constructorCallsBefore = MockedWebSocket.mock.calls.length;
 
       // Advance timer past first reconnect delay
       await jest.advanceTimersByTimeAsync(1000);
 
       // Should have attempted reconnect (isIntentionalDisconnect was reset)
-      expect(mockWsFactory.mock.calls.length).toBe(factoryCallsBefore + 1);
+      expect(MockedWebSocket.mock.calls.length).toBe(
+        constructorCallsBefore + 1,
+      );
     });
 
     it('should remove subscription from tracking on unsubscribe', async () => {
@@ -1346,12 +1365,14 @@ describe('WebSocketManager', () => {
       // Unsubscribe from one
       wsManager.unsubscribe(subId1);
 
+      const oldMockWs = mockWs;
+
       // Create new mock for reconnection
       const newMockWs = createMockWebSocket();
-      mockWsFactory.mockReturnValue(newMockWs as unknown as WebSocket);
+      mockWs = newMockWs;
 
       // Simulate unexpected close
-      emitClose(mockWs, 1006, 'Abnormal closure');
+      emitClose(oldMockWs, 1006, 'Abnormal closure');
 
       // Advance timer past first reconnect delay (1s)
       await jest.advanceTimersByTimeAsync(1000);
@@ -1397,7 +1418,7 @@ describe('WebSocketManager', () => {
 
       // Create new mock for next connection
       const newMockWs = createMockWebSocket();
-      mockWsFactory.mockReturnValue(newMockWs as unknown as WebSocket);
+      mockWs = newMockWs;
 
       // Manually reconnect
       const reconnectPromise = wsManager.connect('session=test-cookie');
@@ -1421,14 +1442,16 @@ describe('WebSocketManager', () => {
       emitOpen(mockWs);
       await connectPromise;
 
+      const oldMockWs = mockWs;
+
       // Create failing mock
       const failingWs = createMockWebSocket();
-      mockWsFactory.mockReturnValue(failingWs as unknown as WebSocket);
+      mockWs = failingWs;
 
       // Simulate unexpected close - triggers reconnect
-      emitClose(mockWs, 1006, 'Abnormal closure');
+      emitClose(oldMockWs, 1006, 'Abnormal closure');
 
-      const factoryCallsBefore = mockWsFactory.mock.calls.length;
+      const constructorCallsBefore = MockedWebSocket.mock.calls.length;
 
       // Advance timer to start first reconnect
       await jest.advanceTimersByTimeAsync(1000);
@@ -1440,8 +1463,10 @@ describe('WebSocketManager', () => {
       // Wait a bit more
       await jest.advanceTimersByTimeAsync(100);
 
-      // Should only have one more factory call (the original reconnect)
-      expect(mockWsFactory.mock.calls.length).toBe(factoryCallsBefore + 1);
+      // Should only have one more constructor call (the original reconnect)
+      expect(MockedWebSocket.mock.calls.length).toBe(
+        constructorCallsBefore + 1,
+      );
     });
 
     it('should abort reconnection if intentionally disconnected during delay', async () => {
@@ -1454,12 +1479,14 @@ describe('WebSocketManager', () => {
       emitOpen(mockWs);
       await connectPromise;
 
+      const oldMockWs = mockWs;
+
       // Create new mock for potential reconnection
       const newMockWs = createMockWebSocket();
-      mockWsFactory.mockReturnValue(newMockWs as unknown as WebSocket);
+      mockWs = newMockWs;
 
       // Simulate unexpected close - triggers attemptReconnect
-      emitClose(mockWs, 1006, 'Abnormal closure');
+      emitClose(oldMockWs, 1006, 'Abnormal closure');
 
       // Advance timer partway through the delay (500ms of 1000ms)
       await jest.advanceTimersByTimeAsync(500);

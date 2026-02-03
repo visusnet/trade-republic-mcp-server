@@ -7,20 +7,23 @@ jest.mock('../../logger', () => ({
   logger,
 }));
 
-import {
-  SymbolMapper,
-  SymbolMapperError,
-  IsinSchema,
-  type YahooFinanceSearchFn,
-} from './SymbolMapper';
+const mockSearch =
+  jest.fn<() => Promise<{ quotes: Array<{ symbol?: string }> }>>();
+jest.mock('yahoo-finance2', () => ({
+  __esModule: true,
+  default: {
+    search: mockSearch,
+  },
+}));
+
+import { SymbolMapper, SymbolMapperError, IsinSchema } from './SymbolMapper';
 
 describe('SymbolMapper', () => {
   let mapper: SymbolMapper;
-  let mockSearch: jest.Mock<YahooFinanceSearchFn>;
 
   beforeEach(() => {
-    mockSearch = jest.fn<YahooFinanceSearchFn>();
-    mapper = new SymbolMapper(mockSearch);
+    mockSearch.mockReset();
+    mapper = new SymbolMapper();
   });
 
   describe('IsinSchema', () => {
@@ -160,14 +163,6 @@ describe('SymbolMapper', () => {
       await mapper.isinToSymbol('US0378331005');
 
       expect(mockSearch).toHaveBeenCalledTimes(2);
-    });
-  });
-
-  describe('constructor', () => {
-    it('should use default yahoo-finance2 when no searchFn provided', () => {
-      // Creating mapper without mock to test default behavior
-      const defaultMapper = new SymbolMapper();
-      expect(defaultMapper).toBeInstanceOf(SymbolMapper);
     });
   });
 });

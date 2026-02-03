@@ -31,7 +31,6 @@ export type SubscribeRequestInput = z.input<typeof SubscribeRequestSchema>;
  */
 export const EnterTwoFactorCodeRequestSchema = z
   .object({
-    /** The 2FA code received via SMS */
     code: z
       .string()
       .min(1, 'Code is required')

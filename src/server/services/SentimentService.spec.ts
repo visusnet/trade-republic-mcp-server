@@ -630,13 +630,6 @@ describe('SentimentService', () => {
     });
   });
 
-  describe('constructor', () => {
-    it('should instantiate Sentiment library internally', () => {
-      const serviceWithDefaults = new SentimentService(mockNewsService);
-      expect(serviceWithDefaults).toBeInstanceOf(SentimentService);
-    });
-  });
-
   describe('error handling', () => {
     it('should handle non-Error thrown from newsService', async () => {
       mockNewsService.getNews.mockRejectedValue('String error');

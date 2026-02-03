@@ -1,25 +1,16 @@
 import { TradeRepublicCredentials } from './TradeRepublicCredentials';
 
 describe('TradeRepublicCredentials', () => {
-  describe('constructor', () => {
-    it('should store phone number and pin', () => {
-      const credentials = new TradeRepublicCredentials('+491701234567', '1234');
+  it('should reject empty phone number', () => {
+    expect(() => new TradeRepublicCredentials('', '1234')).toThrow(
+      'Phone number is required',
+    );
+  });
 
-      expect(credentials.phoneNumber).toBe('+491701234567');
-      expect(credentials.pin).toBe('1234');
-    });
-
-    it('should throw on empty phone number', () => {
-      expect(() => new TradeRepublicCredentials('', '1234')).toThrow(
-        'Phone number is required',
-      );
-    });
-
-    it('should throw on empty pin', () => {
-      expect(() => new TradeRepublicCredentials('+491701234567', '')).toThrow(
-        'PIN is required',
-      );
-    });
+  it('should reject empty PIN', () => {
+    expect(() => new TradeRepublicCredentials('+491701234567', '')).toThrow(
+      'PIN is required',
+    );
   });
 
   describe('getMaskedPhoneNumber', () => {

@@ -5,35 +5,45 @@ import request from 'supertest';
 import * as StreamableHttpModule from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 
 import { mockLogger } from '@test/loggerMock';
-import type { TradeRepublicApiService } from './services/TradeRepublicApiService';
 import { AuthStatus } from './services/TradeRepublicApiService.types';
 
 const logger = mockLogger();
 jest.mock('../logger', () => ({ logger }));
 
+// Mock TradeRepublicApiService
+const mockApiService = {
+  getAuthStatus: jest
+    .fn<() => AuthStatus>()
+    .mockReturnValue(AuthStatus.AUTHENTICATED),
+  subscribe: jest
+    .fn<(input: { topic: string; payload?: object }) => number>()
+    .mockReturnValue(1),
+  unsubscribe: jest.fn<(id: number) => void>(),
+  onMessage: jest.fn(),
+  offMessage: jest.fn(),
+  onError: jest.fn(),
+  offError: jest.fn(),
+  enterTwoFactorCode: jest
+    .fn<() => Promise<{ message: string }>>()
+    .mockResolvedValue({ message: 'Authentication successful' }),
+};
+
+jest.mock('./services/TradeRepublicApiService', () => ({
+  TradeRepublicApiService: jest.fn().mockImplementation(() => mockApiService),
+}));
+
+jest.mock('./services/TradeRepublicCredentials', () => ({
+  TradeRepublicCredentials: jest.fn().mockImplementation(() => ({
+    phoneNumber: '+4917012345678',
+    pin: '1234',
+    getMaskedPhoneNumber: () => '+49170***78',
+  })),
+}));
+
 import { TradeRepublicMcpServer } from './TradeRepublicMcpServer';
 
-/**
- * Creates a mock TradeRepublicApiService for testing.
- */
-function createMockApiService(): jest.Mocked<TradeRepublicApiService> {
-  return {
-    getAuthStatus: jest
-      .fn<() => AuthStatus>()
-      .mockReturnValue(AuthStatus.AUTHENTICATED),
-    subscribe: jest
-      .fn<(input: { topic: string; payload?: object }) => number>()
-      .mockReturnValue(1),
-    unsubscribe: jest.fn<(id: number) => void>(),
-    onMessage: jest.fn(),
-    offMessage: jest.fn(),
-    onError: jest.fn(),
-    offError: jest.fn(),
-    enterTwoFactorCode: jest
-      .fn<() => Promise<{ message: string }>>()
-      .mockResolvedValue({ message: 'Authentication successful' }),
-  } as unknown as jest.Mocked<TradeRepublicApiService>;
-}
+const TEST_PHONE_NUMBER = '+4917012345678';
+const TEST_PIN = '1234';
 
 describe('TradeRepublicMcpServer', () => {
   let server: TradeRepublicMcpServer;
@@ -41,7 +51,7 @@ describe('TradeRepublicMcpServer', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    server = new TradeRepublicMcpServer();
+    server = new TradeRepublicMcpServer(TEST_PHONE_NUMBER, TEST_PIN);
     const mcpServer = server.getMcpServer();
     client = new Client(
       { name: 'test-client', version: '1.0.0' },
@@ -88,53 +98,17 @@ describe('TradeRepublicMcpServer', () => {
   });
 
   describe('Portfolio Tools', () => {
-    it('should register portfolio tools when apiService is provided', async () => {
-      const mockApiService = createMockApiService();
-      const serverWithApi = new TradeRepublicMcpServer(mockApiService);
-      const mcpServerWithApi = serverWithApi.getMcpServer();
-
-      const clientWithApi = new Client(
-        { name: 'test-client', version: '1.0.0' },
-        { capabilities: {} },
-      );
-      const [clientTransport, serverTransport] =
-        InMemoryTransport.createLinkedPair();
-      await Promise.all([
-        clientWithApi.connect(clientTransport),
-        mcpServerWithApi.connect(serverTransport),
-      ]);
-
-      const tools = await clientWithApi.listTools({});
+    it('should register portfolio tools', async () => {
+      const tools = await client.listTools({});
       expect(tools.tools.length).toBeGreaterThan(0);
       expect(tools.tools.map((t) => t.name)).toContain('get_portfolio');
       expect(tools.tools.map((t) => t.name)).toContain('get_cash_balance');
     });
-
-    it('should not register portfolio tools when no apiService provided', () => {
-      // The server should still work without apiService, just without portfolio tools
-      const serverWithoutApi = new TradeRepublicMcpServer();
-      expect(serverWithoutApi.getMcpServer()).toBeDefined();
-    });
   });
 
   describe('Market Data Tools', () => {
-    it('should register market data tools when apiService is provided', async () => {
-      const mockApiService = createMockApiService();
-      const serverWithApi = new TradeRepublicMcpServer(mockApiService);
-      const mcpServerWithApi = serverWithApi.getMcpServer();
-
-      const clientWithApi = new Client(
-        { name: 'test-client', version: '1.0.0' },
-        { capabilities: {} },
-      );
-      const [clientTransport, serverTransport] =
-        InMemoryTransport.createLinkedPair();
-      await Promise.all([
-        clientWithApi.connect(clientTransport),
-        mcpServerWithApi.connect(serverTransport),
-      ]);
-
-      const tools = await clientWithApi.listTools({});
+    it('should register market data tools', async () => {
+      const tools = await client.listTools({});
       const toolNames = tools.tools.map((t) => t.name);
       expect(toolNames).toContain('get_price');
       expect(toolNames).toContain('get_price_history');
@@ -145,112 +119,32 @@ describe('TradeRepublicMcpServer', () => {
       expect(toolNames).toContain('wait_for_market');
     });
 
-    it('should register all tools when apiService is provided', async () => {
-      const mockApiService = createMockApiService();
-      const serverWithApi = new TradeRepublicMcpServer(mockApiService);
-      const mcpServerWithApi = serverWithApi.getMcpServer();
-
-      const clientWithApi = new Client(
-        { name: 'test-client', version: '1.0.0' },
-        { capabilities: {} },
-      );
-      const [clientTransport, serverTransport] =
-        InMemoryTransport.createLinkedPair();
-      await Promise.all([
-        clientWithApi.connect(clientTransport),
-        mcpServerWithApi.connect(serverTransport),
-      ]);
-
-      const tools = await clientWithApi.listTools({});
+    it('should register all 22 tools', async () => {
+      const tools = await client.listTools({});
       // 1 auth + 2 portfolio + 7 market data + 1 market event + 2 technical analysis + 3 external data + 2 risk management + 4 execution = 22 total
       expect(tools.tools).toHaveLength(22);
     });
   });
 
   describe('Auth Tools', () => {
-    it('should register auth tools when apiService is provided', async () => {
-      const mockApiService = createMockApiService();
-      const serverWithApi = new TradeRepublicMcpServer(mockApiService);
-      const mcpServerWithApi = serverWithApi.getMcpServer();
-
-      const clientWithApi = new Client(
-        { name: 'test-client', version: '1.0.0' },
-        { capabilities: {} },
-      );
-      const [clientTransport, serverTransport] =
-        InMemoryTransport.createLinkedPair();
-      await Promise.all([
-        clientWithApi.connect(clientTransport),
-        mcpServerWithApi.connect(serverTransport),
-      ]);
-
-      const tools = await clientWithApi.listTools({});
+    it('should register auth tools', async () => {
+      const tools = await client.listTools({});
       const toolNames = tools.tools.map((t) => t.name);
       expect(toolNames).toContain('enter_two_factor_code');
-    });
-
-    it('should not register auth tools when no apiService provided', async () => {
-      const serverWithoutApi = new TradeRepublicMcpServer();
-      const mcpServer = serverWithoutApi.getMcpServer();
-
-      const testClient = new Client(
-        { name: 'test-client', version: '1.0.0' },
-        { capabilities: {} },
-      );
-      const [clientTransport, serverTransport] =
-        InMemoryTransport.createLinkedPair();
-      await Promise.all([
-        testClient.connect(clientTransport),
-        mcpServer.connect(serverTransport),
-      ]);
-
-      const tools = await testClient.listTools({});
-      const toolNames = tools.tools.map((t) => t.name);
-      expect(toolNames).not.toContain('enter_two_factor_code');
     });
   });
 
   describe('Market Event Tools', () => {
-    it('should register market event tools when apiService is provided', async () => {
-      const mockApiService = createMockApiService();
-      const serverWithApi = new TradeRepublicMcpServer(mockApiService);
-      const mcpServerWithApi = serverWithApi.getMcpServer();
-
-      const clientWithApi = new Client(
-        { name: 'test-client', version: '1.0.0' },
-        { capabilities: {} },
-      );
-      const [clientTransport, serverTransport] =
-        InMemoryTransport.createLinkedPair();
-      await Promise.all([
-        clientWithApi.connect(clientTransport),
-        mcpServerWithApi.connect(serverTransport),
-      ]);
-
-      const tools = await clientWithApi.listTools({});
+    it('should register market event tools', async () => {
+      const tools = await client.listTools({});
       const toolNames = tools.tools.map((t) => t.name);
       expect(toolNames).toContain('wait_for_market_event');
     });
   });
 
   describe('Technical Analysis Tools', () => {
-    it('should register technical analysis tools when apiService is provided', async () => {
-      const mockApiService = createMockApiService();
-      const serverWithApi = new TradeRepublicMcpServer(mockApiService);
-      const mcpServerWithApi = serverWithApi.getMcpServer();
-
-      const clientWithApi = new Client(
-        { name: 'test-client', version: '1.0.0' },
-        { capabilities: {} },
-      );
-      const [clientTransport, serverTransport] =
-        InMemoryTransport.createLinkedPair();
-      await Promise.all([
-        clientWithApi.connect(clientTransport),
-        mcpServerWithApi.connect(serverTransport),
-      ]);
-
-      const tools = await clientWithApi.listTools({});
+    it('should register technical analysis tools', async () => {
+      const tools = await client.listTools({});
       const toolNames = tools.tools.map((t) => t.name);
       expect(toolNames).toContain('get_indicators');
       expect(toolNames).toContain('get_detailed_analysis');
@@ -258,23 +152,8 @@ describe('TradeRepublicMcpServer', () => {
   });
 
   describe('Execution Tools', () => {
-    it('should register execution tools when apiService is provided', async () => {
-      const mockApiService = createMockApiService();
-      const serverWithApi = new TradeRepublicMcpServer(mockApiService);
-      const mcpServerWithApi = serverWithApi.getMcpServer();
-
-      const clientWithApi = new Client(
-        { name: 'test-client', version: '1.0.0' },
-        { capabilities: {} },
-      );
-      const [clientTransport, serverTransport] =
-        InMemoryTransport.createLinkedPair();
-      await Promise.all([
-        clientWithApi.connect(clientTransport),
-        mcpServerWithApi.connect(serverTransport),
-      ]);
-
-      const tools = await clientWithApi.listTools({});
+    it('should register execution tools', async () => {
+      const tools = await client.listTools({});
       const toolNames = tools.tools.map((t) => t.name);
       expect(toolNames).toContain('place_order');
       expect(toolNames).toContain('get_orders');
@@ -284,46 +163,12 @@ describe('TradeRepublicMcpServer', () => {
   });
 
   describe('External Data Tools', () => {
-    it('should register external data tools even without apiService', async () => {
-      const serverWithoutApi = new TradeRepublicMcpServer();
-      const mcpServer = serverWithoutApi.getMcpServer();
-
-      const testClient = new Client(
-        { name: 'test-client', version: '1.0.0' },
-        { capabilities: {} },
-      );
-      const [clientTransport, serverTransport] =
-        InMemoryTransport.createLinkedPair();
-      await Promise.all([
-        testClient.connect(clientTransport),
-        mcpServer.connect(serverTransport),
-      ]);
-
-      const tools = await testClient.listTools({});
+    it('should register external data tools', async () => {
+      const tools = await client.listTools({});
       const toolNames = tools.tools.map((t) => t.name);
       expect(toolNames).toContain('get_news');
       expect(toolNames).toContain('get_sentiment');
       expect(toolNames).toContain('get_fundamentals');
-    });
-
-    it('should register 3 external data tools without apiService', async () => {
-      const serverWithoutApi = new TradeRepublicMcpServer();
-      const mcpServer = serverWithoutApi.getMcpServer();
-
-      const testClient = new Client(
-        { name: 'test-client', version: '1.0.0' },
-        { capabilities: {} },
-      );
-      const [clientTransport, serverTransport] =
-        InMemoryTransport.createLinkedPair();
-      await Promise.all([
-        testClient.connect(clientTransport),
-        mcpServer.connect(serverTransport),
-      ]);
-
-      const tools = await testClient.listTools({});
-      // 3 external data tools + 2 risk management tools are available without apiService
-      expect(tools.tools).toHaveLength(5);
     });
   });
 
@@ -350,7 +195,10 @@ describe('TradeRepublicMcpServer', () => {
         .mockImplementationOnce(() => {
           throw new Error('Transport failed');
         });
-      const testServer = new TradeRepublicMcpServer();
+      const testServer = new TradeRepublicMcpServer(
+        TEST_PHONE_NUMBER,
+        TEST_PIN,
+      );
       const response = await request(testServer.getExpressApp())
         .post('/mcp')
         .send({ jsonrpc: '2.0', method: 'initialize', id: 1, params: {} })

@@ -47,12 +47,6 @@ describe('AuthToolRegistry', () => {
     );
   });
 
-  describe('constructor', () => {
-    it('should create an instance', () => {
-      expect(registry).toBeInstanceOf(AuthToolRegistry);
-    });
-  });
-
   describe('register', () => {
     it('should register enter_two_factor_code tool', () => {
       registry.register();

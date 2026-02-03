@@ -14,24 +14,50 @@ import { RiskService } from './services/RiskService';
 import { SentimentService } from './services/SentimentService';
 import { SymbolMapper } from './services/SymbolMapper';
 import { TechnicalAnalysisService } from './services/TechnicalAnalysisService';
-import type { TradeRepublicApiService } from './services/TradeRepublicApiService';
-import {
-  AuthToolRegistry,
-  ExecutionToolRegistry,
-  ExternalDataToolRegistry,
-  MarketDataToolRegistry,
-  MarketEventToolRegistry,
-  PortfolioToolRegistry,
-  RiskManagementToolRegistry,
-  TechnicalAnalysisToolRegistry,
-} from './tools';
+import { TradeRepublicApiService } from './services/TradeRepublicApiService';
+import { TradeRepublicCredentials } from './services/TradeRepublicCredentials';
+import { AuthToolRegistry } from './tools/AuthToolRegistry';
+import { ExecutionToolRegistry } from './tools/ExecutionToolRegistry';
+import { ExternalDataToolRegistry } from './tools/ExternalDataToolRegistry';
+import { MarketDataToolRegistry } from './tools/MarketDataToolRegistry';
+import { MarketEventToolRegistry } from './tools/MarketEventToolRegistry';
+import { PortfolioToolRegistry } from './tools/PortfolioToolRegistry';
+import { RiskManagementToolRegistry } from './tools/RiskManagementToolRegistry';
+import { TechnicalAnalysisToolRegistry } from './tools/TechnicalAnalysisToolRegistry';
+import { ToolRegistry } from './tools/ToolRegistry';
 
 export class TradeRepublicMcpServer {
   private readonly app: Express;
-  private readonly apiService: TradeRepublicApiService | undefined;
+  private readonly apiService: TradeRepublicApiService;
+  private readonly portfolioService: PortfolioService;
+  private readonly marketDataService: MarketDataService;
+  private readonly technicalAnalysisService: TechnicalAnalysisService;
+  private readonly orderService: OrderService;
+  private readonly marketEventService: MarketEventService;
+  private readonly newsService: NewsService;
+  private readonly sentimentService: SentimentService;
+  private readonly fundamentalsService: FundamentalsService;
+  private readonly riskService: RiskService;
 
-  constructor(apiService?: TradeRepublicApiService) {
-    this.apiService = apiService;
+  constructor(phoneNumber: string, pin: string) {
+    const credentials = new TradeRepublicCredentials(phoneNumber, pin);
+    this.apiService = new TradeRepublicApiService(credentials);
+
+    // Initialize all services
+    this.portfolioService = new PortfolioService(this.apiService);
+    this.marketDataService = new MarketDataService(this.apiService);
+    this.technicalAnalysisService = new TechnicalAnalysisService(
+      this.marketDataService,
+    );
+    this.orderService = new OrderService(this.apiService);
+    this.marketEventService = new MarketEventService(this.apiService);
+
+    const symbolMapper = new SymbolMapper();
+    this.newsService = new NewsService(symbolMapper);
+    this.sentimentService = new SentimentService(this.newsService);
+    this.fundamentalsService = new FundamentalsService(symbolMapper);
+    this.riskService = new RiskService();
+
     this.app = createMcpExpressApp();
     this.setupRoutes();
   }
@@ -120,70 +146,25 @@ BEST PRACTICES:
   }
 
   private registerToolsForServer(server: McpServer): void {
-    if (this.apiService) {
-      const portfolioService = new PortfolioService(this.apiService);
-      const portfolioToolRegistry = new PortfolioToolRegistry(
+    const registries: ToolRegistry[] = [
+      new PortfolioToolRegistry(server, this.portfolioService),
+      new MarketDataToolRegistry(server, this.marketDataService),
+      new TechnicalAnalysisToolRegistry(server, this.technicalAnalysisService),
+      new ExecutionToolRegistry(server, this.orderService),
+      new MarketEventToolRegistry(server, this.marketEventService),
+      new AuthToolRegistry(server, this.apiService),
+      new ExternalDataToolRegistry(
         server,
-        portfolioService,
-      );
-      portfolioToolRegistry.register();
+        this.newsService,
+        this.sentimentService,
+        this.fundamentalsService,
+      ),
+      new RiskManagementToolRegistry(server, this.riskService),
+    ];
 
-      const marketDataService = new MarketDataService(this.apiService);
-      const marketDataToolRegistry = new MarketDataToolRegistry(
-        server,
-        marketDataService,
-      );
-      marketDataToolRegistry.register();
-
-      const technicalAnalysisService = new TechnicalAnalysisService(
-        marketDataService,
-      );
-      const technicalAnalysisToolRegistry = new TechnicalAnalysisToolRegistry(
-        server,
-        technicalAnalysisService,
-      );
-      technicalAnalysisToolRegistry.register();
-
-      const orderService = new OrderService(this.apiService);
-      const executionToolRegistry = new ExecutionToolRegistry(
-        server,
-        orderService,
-      );
-      executionToolRegistry.register();
-
-      const marketEventService = new MarketEventService(this.apiService);
-      const marketEventToolRegistry = new MarketEventToolRegistry(
-        server,
-        marketEventService,
-      );
-      marketEventToolRegistry.register();
-
-      // Auth tools for 2FA verification
-      const authToolRegistry = new AuthToolRegistry(server, this.apiService);
-      authToolRegistry.register();
-    }
-
-    // External data tools don't require authentication
-    const symbolMapper = new SymbolMapper();
-    const newsService = new NewsService(symbolMapper);
-    const sentimentService = new SentimentService(newsService);
-    const fundamentalsService = new FundamentalsService(symbolMapper);
-
-    const externalDataToolRegistry = new ExternalDataToolRegistry(
-      server,
-      newsService,
-      sentimentService,
-      fundamentalsService,
-    );
-    externalDataToolRegistry.register();
-
-    // Risk management tools don't require authentication
-    const riskService = new RiskService();
-    const riskManagementToolRegistry = new RiskManagementToolRegistry(
-      server,
-      riskService,
-    );
-    riskManagementToolRegistry.register();
+    registries.forEach((r) => {
+      r.register();
+    });
   }
 
   private createMcpServerInstance(): McpServer {

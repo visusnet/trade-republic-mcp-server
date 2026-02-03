@@ -260,11 +260,4 @@ describe('NewsService', () => {
       expect(result.articles).toHaveLength(2);
     });
   });
-
-  describe('constructor', () => {
-    it('should instantiate with symbol mapper', () => {
-      const serviceWithDefaults = new NewsService(mockSymbolMapper);
-      expect(serviceWithDefaults).toBeInstanceOf(NewsService);
-    });
-  });
 });

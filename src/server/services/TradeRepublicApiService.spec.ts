@@ -27,6 +27,7 @@ import {
   TradeRepublicError,
   TwoFactorCodeRequiredException,
   type KeyPair,
+  type WebSocketMessage,
 } from './TradeRepublicApiService.types';
 import { WebSocketManager } from './TradeRepublicApiService.websocket';
 import { TradeRepublicCredentials } from './TradeRepublicCredentials';
@@ -193,22 +194,6 @@ describe('TradeRepublicApiService', () => {
 
   afterEach(() => {
     global.fetch = originalFetch;
-  });
-
-  describe('constructor', () => {
-    it('should accept valid credentials', () => {
-      expect(() => new TradeRepublicApiService(testCredentials)).not.toThrow();
-    });
-
-    it('should instantiate CryptoManager internally', () => {
-      const MockedCryptoManager = jest.mocked(CryptoManager);
-      expect(MockedCryptoManager).toHaveBeenCalled();
-    });
-
-    it('should instantiate WebSocketManager internally', () => {
-      const MockedWebSocketManager = jest.mocked(WebSocketManager);
-      expect(MockedWebSocketManager).toHaveBeenCalled();
-    });
   });
 
   describe('connect', () => {
@@ -728,6 +713,31 @@ describe('TradeRepublicApiService', () => {
 
       await expect(freshService.validateSession()).rejects.toThrow(
         'Service not initialized',
+      );
+    });
+
+    it('should throw if initialized but not authenticated when validating session', async () => {
+      // Create fresh service and trigger login flow (which initializes but doesn't authenticate)
+      const freshService = new TradeRepublicApiService(testCredentials);
+      mockFetch.mockResolvedValueOnce(createMockLoginResponse() as Response);
+
+      // subscribeAndWait triggers initialization and login, then throws TwoFactorCodeRequiredException
+      const subscribePromise = freshService
+        .subscribeAndWait(
+          'testTopic',
+          {},
+          { safeParse: () => ({ success: true, data: {} }) },
+        )
+        .catch(() => {});
+      await jest.advanceTimersByTimeAsync(3000);
+      await subscribePromise;
+
+      // Service is now initialized (in AWAITING_2FA state) but not authenticated
+      expect(freshService.getAuthStatus()).toBe(AuthStatus.AWAITING_2FA);
+
+      // validateSession should throw because not authenticated
+      await expect(freshService.validateSession()).rejects.toThrow(
+        'Not authenticated',
       );
     });
 
@@ -1290,6 +1300,76 @@ describe('TradeRepublicApiService', () => {
       await promise;
 
       expect(mockWebSocketManagerInstance.unsubscribe).toHaveBeenCalledWith(50);
+    });
+
+    it('should ignore errors after already resolved (race condition)', async () => {
+      mockWebSocketManagerInstance.subscribe.mockReturnValue(51);
+
+      // Capture the error handler before it gets removed by cleanup
+      // Use a wrapper object to avoid TypeScript narrowing issues with closures
+      type ErrorHandler = (error: Error | WebSocketMessage) => void;
+      const captured: { handler: ErrorHandler | null } = { handler: null };
+      const originalOnError = service.onError.bind(service);
+      jest.spyOn(service, 'onError').mockImplementation((handler) => {
+        captured.handler = handler as ErrorHandler;
+        originalOnError(handler);
+      });
+
+      const promise = service.subscribeAndWait('testTopic', {}, mockSchema);
+
+      // Allow async auth check to complete before emitting message
+      await jest.advanceTimersByTimeAsync(0);
+
+      // First, resolve with success
+      const successMessage = {
+        id: 51,
+        code: MESSAGE_CODE.A,
+        payload: { value: 42 },
+      };
+      mockWebSocketManagerInstance.emit('message', successMessage);
+
+      // Manually call the captured error handler after resolution (simulating race condition)
+      // This bypasses the cleanup that would have removed the handler
+      expect(captured.handler).not.toBeNull();
+      const lateError = new Error('Late error after resolution');
+      // Handler is guaranteed non-null by expect above
+      if (captured.handler !== null) {
+        captured.handler(lateError);
+      }
+
+      // The promise should resolve with the success value, not reject
+      const result = await promise;
+      expect(result).toEqual({ value: 42 });
+    });
+
+    it('should use String(payload) as fallback when error message has no message field', async () => {
+      mockWebSocketManagerInstance.subscribe.mockReturnValue(52);
+
+      const promise = service.subscribeAndWait('testTopic', {}, mockSchema);
+
+      // Allow async auth check to complete before emitting message
+      await jest.advanceTimersByTimeAsync(0);
+
+      // Simulate error with payload that has no message field
+      const errorMessage = {
+        id: 52,
+        code: MESSAGE_CODE.E,
+        payload: 'raw-error-string', // No message field, just a string payload
+      };
+      mockWebSocketManagerInstance.emit('error', errorMessage);
+
+      await expect(promise).rejects.toThrow('raw-error-string');
+    });
+
+    it('should reject with non-Error string when subscribe throws non-Error', async () => {
+      mockWebSocketManagerInstance.subscribe.mockImplementation(() => {
+        // eslint-disable-next-line @typescript-eslint/only-throw-error
+        throw 'string-error-not-Error-instance';
+      });
+
+      const promise = service.subscribeAndWait('testTopic', {}, mockSchema);
+
+      await expect(promise).rejects.toThrow('string-error-not-Error-instance');
     });
   });
 

@@ -6,6 +6,8 @@
 
 import { EventEmitter } from 'events';
 
+import { WebSocket as UndiciWebSocket } from 'undici';
+
 import { logger } from '../../logger';
 import {
   ConnectionStatus,
@@ -16,7 +18,6 @@ import {
   type WebSocket,
   type WebSocketCloseEvent,
   type WebSocketErrorEvent,
-  type WebSocketFactory,
   type WebSocketMessage,
   type WebSocketMessageEvent,
   type WebSocketOpenEvent,
@@ -66,10 +67,6 @@ export class WebSocketManager extends EventEmitter {
   private isReconnecting = false;
   private isIntentionalDisconnect = false;
   private lastCookieHeader = '';
-
-  constructor(private readonly wsFactory: WebSocketFactory) {
-    super();
-  }
 
   /**
    * Starts the heartbeat interval to check for connection health.
@@ -262,7 +259,10 @@ export class WebSocketManager extends EventEmitter {
         const options: WebSocketOptions = cookieHeader
           ? { headers: { Cookie: cookieHeader } }
           : {};
-        this.ws = this.wsFactory(TR_WS_URL, options);
+        this.ws = new UndiciWebSocket(
+          TR_WS_URL,
+          options,
+        ) as unknown as WebSocket;
 
         this.openHandler = () => {
           this.status = ConnectionStatus.CONNECTED;

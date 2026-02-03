@@ -35,7 +35,6 @@ export type ErrorResponse = z.output<typeof ErrorResponseSchema>;
  */
 export const EnterTwoFactorCodeResponseSchema = z
   .object({
-    /** Result message indicating success or failure */
     message: z
       .string()
       .describe('Result message indicating success or failure'),

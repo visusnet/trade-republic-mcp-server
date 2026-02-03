@@ -26,23 +26,10 @@ export class SymbolMapperError extends Error {
 export const IsinSchema = z.string().regex(/^[A-Z]{2}[A-Z0-9]{10}$/);
 
 /**
- * Interface for Yahoo Finance search function.
- */
-export interface YahooFinanceSearchFn {
-  (query: string): Promise<{ quotes: Array<{ symbol?: string }> }>;
-}
-
-/**
  * Maps ISINs to Yahoo Finance symbols.
  */
 export class SymbolMapper {
   private readonly cache: Map<string, string> = new Map();
-  private readonly searchFn: YahooFinanceSearchFn;
-
-  constructor(searchFn?: YahooFinanceSearchFn) {
-    // eslint-disable-next-line @typescript-eslint/no-deprecated
-    this.searchFn = searchFn ?? yahooFinance.search.bind(yahooFinance);
-  }
 
   /**
    * Convert an ISIN to a Yahoo Finance symbol.
@@ -64,9 +51,10 @@ export class SymbolMapper {
 
     logger.api.info({ isin }, 'Searching Yahoo Finance for symbol');
 
-    let result;
+    let result: { quotes: Array<{ symbol?: string }> };
     try {
-      result = await this.searchFn(isin);
+      // eslint-disable-next-line @typescript-eslint/no-deprecated, @typescript-eslint/await-thenable
+      result = await yahooFinance.search(isin);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw new SymbolMapperError(`Failed to search for symbol: ${message}`);
