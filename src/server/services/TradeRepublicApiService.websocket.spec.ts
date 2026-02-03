@@ -1484,6 +1484,50 @@ describe('WebSocketManager', () => {
       );
     });
 
+    it('should return early when attemptReconnect is called while already reconnecting', async () => {
+      // Initial connect
+      const connectPromise = wsManager.connect('session=test-cookie');
+      mockWs.setReadyState(mockWs.OPEN);
+      emitOpen(mockWs);
+      await connectPromise;
+
+      const oldMockWs = mockWs;
+
+      // Create mock for potential reconnection
+      const newMockWs = createMockWebSocket();
+      mockWs = newMockWs;
+
+      // Trigger first reconnect via close event
+      emitClose(oldMockWs, 1006, 'Abnormal closure');
+
+      // Immediately call attemptReconnect again via the private method
+      // This should return early because isReconnecting is already true
+      const wsManagerWithPrivate = wsManager as unknown as {
+        attemptReconnect: () => Promise<void>;
+      };
+      const secondAttempt = wsManagerWithPrivate.attemptReconnect();
+
+      // The second attempt should resolve immediately (early return)
+      await secondAttempt;
+
+      // Verify only one reconnect is happening by checking WebSocket constructor calls
+      const constructorCallsBefore = MockedWebSocket.mock.calls.length;
+
+      // Advance timer past first reconnect delay
+      await jest.advanceTimersByTimeAsync(1000);
+
+      // Should only have one constructor call (from the first reconnect attempt)
+      expect(MockedWebSocket.mock.calls.length).toBe(
+        constructorCallsBefore + 1,
+      );
+
+      // Complete the reconnection to clean up
+      newMockWs.setReadyState(newMockWs.OPEN);
+      emitOpen(newMockWs);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
     it('should abort reconnection if intentionally disconnected during delay', async () => {
       const reconnectedHandler = jest.fn();
       wsManager.on('reconnected', reconnectedHandler);

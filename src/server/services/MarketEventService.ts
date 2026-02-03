@@ -223,7 +223,6 @@ export class MarketEventService {
 
       // Set timeout
       ctx.timeoutId = setTimeout(() => {
-        /* istanbul ignore if -- @preserve Defensive guard for race condition */
         if (resolved) {
           return;
         }

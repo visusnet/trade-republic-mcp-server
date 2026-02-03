@@ -162,7 +162,6 @@ export class WebSocketManager extends EventEmitter {
    * Attempts to reconnect with exponential backoff.
    */
   private async attemptReconnect(): Promise<void> {
-    // istanbul ignore if -- race condition: disconnect() during heartbeat check
     if (this.isReconnecting || this.isIntentionalDisconnect) {
       return;
     }
@@ -212,12 +211,6 @@ export class WebSocketManager extends EventEmitter {
    * Only called after successful connect(), so ws is guaranteed to be valid.
    */
   private resubscribeAll(): void {
-    const ws = this.ws;
-    // istanbul ignore if -- defensive check: ws should always be set after connect()
-    if (!ws) {
-      return;
-    }
-
     for (const [, { topic, payload }] of this.activeSubscriptions) {
       const subId = this.nextSubscriptionId++;
       const message = {
@@ -226,7 +219,7 @@ export class WebSocketManager extends EventEmitter {
       };
       const messageStr = `sub ${subId} ${JSON.stringify(message)}`;
       logger.api.debug(`Resubscribing: ${messageStr}`);
-      ws.send(messageStr);
+      this.ws?.send(messageStr);
     }
   }
 
@@ -255,76 +248,66 @@ export class WebSocketManager extends EventEmitter {
         }
       };
 
-      try {
-        const options: WebSocketOptions = cookieHeader
-          ? { headers: { Cookie: cookieHeader } }
-          : {};
-        this.ws = new UndiciWebSocket(
-          TR_WS_URL,
-          options,
-        ) as unknown as WebSocket;
+      const options: WebSocketOptions = cookieHeader
+        ? { headers: { Cookie: cookieHeader } }
+        : {};
+      this.ws = new UndiciWebSocket(TR_WS_URL, options) as unknown as WebSocket;
 
-        this.openHandler = () => {
-          this.status = ConnectionStatus.CONNECTED;
-          logger.api.info('WebSocket connected');
-          this.sendConnectMessage();
-          this.startHeartbeat();
-          settle(() => {
-            resolve();
-          });
-        };
-
-        this.messageHandler = (event: WebSocketMessageEvent) => {
-          this.handleMessage(event.data);
-        };
-
-        this.errorHandler = (event: WebSocketErrorEvent) => {
-          const errorMessage =
-            event.error?.message ?? event.message ?? 'Unknown WebSocket error';
-          logger.api.error(`WebSocket error: ${errorMessage}`);
-          const wasConnecting = this.status === ConnectionStatus.CONNECTING;
-          this.stopHeartbeat();
-          this.status = ConnectionStatus.DISCONNECTED;
-          if (wasConnecting) {
-            settle(() => {
-              reject(event.error ?? new Error(errorMessage));
-            });
-          } else {
-            this.emit('error', event.error ?? new Error(errorMessage));
-          }
-        };
-
-        this.closeHandler = (event: WebSocketCloseEvent) => {
-          const reasonStr = event.reason;
-          logger.api.info(`WebSocket closed: ${event.code} ${reasonStr}`);
-          const wasConnecting = this.status === ConnectionStatus.CONNECTING;
-          const wasConnected = this.status === ConnectionStatus.CONNECTED;
-          this.stopHeartbeat();
-          this.status = ConnectionStatus.DISCONNECTED;
-          if (wasConnecting) {
-            settle(() => {
-              reject(
-                new WebSocketError(
-                  `Connection closed: ${event.code} ${reasonStr}`,
-                ),
-              );
-            });
-          } else if (wasConnected && !this.isIntentionalDisconnect) {
-            // Unexpected close - attempt reconnection
-            void this.attemptReconnect();
-          }
-        };
-
-        this.ws.addEventListener('open', this.openHandler);
-        this.ws.addEventListener('message', this.messageHandler);
-        this.ws.addEventListener('error', this.errorHandler);
-        this.ws.addEventListener('close', this.closeHandler);
-      } catch /* istanbul ignore next */ {
-        this.status = ConnectionStatus.DISCONNECTED;
+      this.openHandler = () => {
+        this.status = ConnectionStatus.CONNECTED;
+        logger.api.info('WebSocket connected');
+        this.sendConnectMessage();
+        this.startHeartbeat();
         settle(() => {
-          reject(new WebSocketError('WebSocket factory error'));
+          resolve();
         });
-      }
+      };
+
+      this.messageHandler = (event: WebSocketMessageEvent) => {
+        this.handleMessage(event.data);
+      };
+
+      this.errorHandler = (event: WebSocketErrorEvent) => {
+        const errorMessage =
+          event.error?.message ?? event.message ?? 'Unknown WebSocket error';
+        logger.api.error(`WebSocket error: ${errorMessage}`);
+        const wasConnecting = this.status === ConnectionStatus.CONNECTING;
+        this.stopHeartbeat();
+        this.status = ConnectionStatus.DISCONNECTED;
+        if (wasConnecting) {
+          settle(() => {
+            reject(event.error ?? new Error(errorMessage));
+          });
+        } else {
+          this.emit('error', event.error ?? new Error(errorMessage));
+        }
+      };
+
+      this.closeHandler = (event: WebSocketCloseEvent) => {
+        const reasonStr = event.reason;
+        logger.api.info(`WebSocket closed: ${event.code} ${reasonStr}`);
+        const wasConnecting = this.status === ConnectionStatus.CONNECTING;
+        const wasConnected = this.status === ConnectionStatus.CONNECTED;
+        this.stopHeartbeat();
+        this.status = ConnectionStatus.DISCONNECTED;
+        if (wasConnecting) {
+          settle(() => {
+            reject(
+              new WebSocketError(
+                `Connection closed: ${event.code} ${reasonStr}`,
+              ),
+            );
+          });
+        } else if (wasConnected && !this.isIntentionalDisconnect) {
+          // Unexpected close - attempt reconnection
+          void this.attemptReconnect();
+        }
+      };
+
+      this.ws.addEventListener('open', this.openHandler);
+      this.ws.addEventListener('message', this.messageHandler);
+      this.ws.addEventListener('error', this.errorHandler);
+      this.ws.addEventListener('close', this.closeHandler);
     });
   }
 

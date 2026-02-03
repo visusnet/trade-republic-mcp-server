@@ -1299,44 +1299,53 @@ describe('MarketEventService', () => {
         expect(result.status).toBe('timeout');
       });
 
-      it('should ignore timeout callback if already triggered', async () => {
-        // This tests the race condition guard where timeout fires after resolution.
-        // We use runAllTimers to ensure the timeout callback fires even though
-        // the condition has already triggered and cleared the timeout.
-        // Note: Because cleanup() calls clearTimeout, we need to trigger the
-        // callback manually by not clearing the timeout in our mock.
-        // Instead, we'll just verify the guard works by advancing time after trigger.
-        const request: WaitForMarketEventRequest = {
-          subscriptions: [
-            {
-              isin: 'DE0007164600',
-              conditions: [
-                {
-                  field: ConditionField.BID,
-                  operator: ConditionOperator.GT,
-                  value: 65,
-                },
-              ],
-              logic: ConditionLogic.ANY,
-            },
-          ],
-          timeout: 1,
-        };
+      it('should ignore timeout callback if already triggered (race condition guard)', async () => {
+        // This tests the race condition guard where the timeout callback fires
+        // AFTER the promise has already resolved. In real code, this can happen
+        // when the timeout callback is already queued in the event loop before
+        // clearTimeout is called.
 
-        const resultPromise = service.waitForMarketEvent(request);
+        // Mock clearTimeout to be a no-op, simulating the race condition where
+        // the timeout callback was already queued before clearTimeout was called
+        const originalClearTimeout = globalThis.clearTimeout;
+        globalThis.clearTimeout = jest.fn() as unknown as typeof clearTimeout;
 
-        // Trigger the condition
-        sendTicker(1, 66, 67);
+        try {
+          const request: WaitForMarketEventRequest = {
+            subscriptions: [
+              {
+                isin: 'DE0007164600',
+                conditions: [
+                  {
+                    field: ConditionField.BID,
+                    operator: ConditionOperator.GT,
+                    value: 65,
+                  },
+                ],
+                logic: ConditionLogic.ANY,
+              },
+            ],
+            timeout: 1,
+          };
 
-        const result = await resultPromise;
-        expect(result.status).toBe('triggered');
+          const resultPromise = service.waitForMarketEvent(request);
 
-        // Advance time past timeout - timeout callback should have been cleared
-        // but the resolved check would protect against any race condition
-        jest.advanceTimersByTime(2000);
+          // Trigger the condition - this sets resolved = true and calls cleanup()
+          // but clearTimeout is mocked to do nothing, so timeout will still fire
+          sendTicker(1, 66, 67);
 
-        // Result should still be triggered
-        expect(result.status).toBe('triggered');
+          const result = await resultPromise;
+          expect(result.status).toBe('triggered');
+
+          // Now advance timers to fire the timeout callback.
+          // The `if (resolved) { return; }` guard should prevent any further action.
+          jest.advanceTimersByTime(1000);
+
+          // Result should still be triggered, not timeout
+          expect(result.status).toBe('triggered');
+        } finally {
+          globalThis.clearTimeout = originalClearTimeout;
+        }
       });
     });
   });
