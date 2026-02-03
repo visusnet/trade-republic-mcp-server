@@ -319,8 +319,7 @@ export class WebSocketManager extends EventEmitter {
         this.ws.addEventListener('message', this.messageHandler);
         this.ws.addEventListener('error', this.errorHandler);
         this.ws.addEventListener('close', this.closeHandler);
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      } catch (_error) /* istanbul ignore next */ {
+      } catch /* istanbul ignore next */ {
         this.status = ConnectionStatus.DISCONNECTED;
         settle(() => {
           reject(new WebSocketError('WebSocket factory error'));

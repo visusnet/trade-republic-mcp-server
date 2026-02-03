@@ -37,6 +37,15 @@ import { TradeRepublicApiService } from './TradeRepublicApiService';
 const originalFetch = global.fetch;
 
 /**
+ * Helper to throw a non-Error string for testing edge cases.
+ * @internal Used to test code paths that handle non-Error throws from external code.
+ */
+function throwNonErrorString(message: string): never {
+  // eslint-disable-next-line @typescript-eslint/only-throw-error
+  throw message;
+}
+
+/**
  * Creates a mock Response with Set-Cookie headers for cookie-based auth.
  */
 function createMock2FAResponse(
@@ -1355,8 +1364,7 @@ describe('TradeRepublicApiService', () => {
 
     it('should reject with non-Error string when subscribe throws non-Error', async () => {
       mockWebSocketManagerInstance.subscribe.mockImplementation(() => {
-        // eslint-disable-next-line @typescript-eslint/only-throw-error
-        throw 'string-error-not-Error-instance';
+        throwNonErrorString('string-error-not-Error-instance');
       });
 
       const promise = service.subscribeAndWait('testTopic', {}, mockSchema);
