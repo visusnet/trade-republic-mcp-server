@@ -275,14 +275,12 @@ describe('TradeRepublicApiService', () => {
         json: () => Promise.resolve({ message: 'Invalid credentials' }),
       } as Response);
 
-      const connectPromise = service
-        .connect('5678')
-        .catch((e: unknown) => e as Error);
-      await jest.advanceTimersByTimeAsync(2000);
+      const promise = service.connect('5678');
 
-      const result = await connectPromise;
-      expect(result).toBeInstanceOf(Error);
-      expect((result as Error).message).toBe('Invalid credentials');
+      await Promise.all([
+        expect(promise).rejects.toThrow('Invalid credentials'),
+        jest.advanceTimersByTimeAsync(2000),
+      ]);
     });
 
     it('should use errorMessage from login error response', async () => {
@@ -293,13 +291,12 @@ describe('TradeRepublicApiService', () => {
           Promise.resolve({ errorMessage: 'Error from errorMessage' }),
       } as Response);
 
-      const connectPromise = service
-        .connect('5678')
-        .catch((e: unknown) => e as Error);
-      await jest.advanceTimersByTimeAsync(2000);
+      const promise = service.connect('5678');
 
-      const result = await connectPromise;
-      expect((result as Error).message).toBe('Error from errorMessage');
+      await Promise.all([
+        expect(promise).rejects.toThrow('Error from errorMessage'),
+        jest.advanceTimersByTimeAsync(2000),
+      ]);
     });
 
     it('should use default error message if no login error details', async () => {
@@ -309,13 +306,12 @@ describe('TradeRepublicApiService', () => {
         json: () => Promise.resolve({}),
       } as Response);
 
-      const connectPromise = service
-        .connect('5678')
-        .catch((e: unknown) => e as Error);
-      await jest.advanceTimersByTimeAsync(2000);
+      const promise = service.connect('5678');
 
-      const result = await connectPromise;
-      expect((result as Error).message).toBe('Login failed');
+      await Promise.all([
+        expect(promise).rejects.toThrow('Login failed'),
+        jest.advanceTimersByTimeAsync(2000),
+      ]);
     });
 
     it('should use default error message if login error response is invalid', async () => {
@@ -325,13 +321,12 @@ describe('TradeRepublicApiService', () => {
         json: () => Promise.resolve('not an object'),
       } as Response);
 
-      const connectPromise = service
-        .connect('5678')
-        .catch((e: unknown) => e as Error);
-      await jest.advanceTimersByTimeAsync(2000);
+      const promise = service.connect('5678');
 
-      const result = await connectPromise;
-      expect((result as Error).message).toBe('Login failed');
+      await Promise.all([
+        expect(promise).rejects.toThrow('Login failed'),
+        jest.advanceTimersByTimeAsync(2000),
+      ]);
     });
 
     it('should throw on 2FA verification failure', async () => {
@@ -348,14 +343,12 @@ describe('TradeRepublicApiService', () => {
         } as Response);
       });
 
-      const connectPromise = service
-        .connect('5678')
-        .catch((e: unknown) => e as Error);
-      await jest.advanceTimersByTimeAsync(2000);
+      const promise = service.connect('5678');
 
-      const result = await connectPromise;
-      expect(result).toBeInstanceOf(Error);
-      expect((result as Error).message).toBe('Invalid 2FA code');
+      await Promise.all([
+        expect(promise).rejects.toThrow('Invalid 2FA code'),
+        jest.advanceTimersByTimeAsync(2000),
+      ]);
     });
 
     it('should use errorMessage from 2FA error response', async () => {
@@ -372,13 +365,12 @@ describe('TradeRepublicApiService', () => {
         } as Response);
       });
 
-      const connectPromise = service
-        .connect('5678')
-        .catch((e: unknown) => e as Error);
-      await jest.advanceTimersByTimeAsync(2000);
+      const promise = service.connect('5678');
 
-      const result = await connectPromise;
-      expect((result as Error).message).toBe('2FA error message');
+      await Promise.all([
+        expect(promise).rejects.toThrow('2FA error message'),
+        jest.advanceTimersByTimeAsync(2000),
+      ]);
     });
 
     it('should use default 2FA error message if no error details', async () => {
@@ -395,13 +387,12 @@ describe('TradeRepublicApiService', () => {
         } as Response);
       });
 
-      const connectPromise = service
-        .connect('5678')
-        .catch((e: unknown) => e as Error);
-      await jest.advanceTimersByTimeAsync(2000);
+      const promise = service.connect('5678');
 
-      const result = await connectPromise;
-      expect((result as Error).message).toBe('2FA verification failed');
+      await Promise.all([
+        expect(promise).rejects.toThrow('2FA verification failed'),
+        jest.advanceTimersByTimeAsync(2000),
+      ]);
     });
 
     it('should use default 2FA error message if error response is invalid', async () => {
@@ -418,13 +409,12 @@ describe('TradeRepublicApiService', () => {
         } as Response);
       });
 
-      const connectPromise = service
-        .connect('5678')
-        .catch((e: unknown) => e as Error);
-      await jest.advanceTimersByTimeAsync(2000);
+      const promise = service.connect('5678');
 
-      const result = await connectPromise;
-      expect((result as Error).message).toBe('2FA verification failed');
+      await Promise.all([
+        expect(promise).rejects.toThrow('2FA verification failed'),
+        jest.advanceTimersByTimeAsync(2000),
+      ]);
     });
 
     it('should store cookies from 2FA response', async () => {
@@ -447,15 +437,14 @@ describe('TradeRepublicApiService', () => {
         return Promise.resolve(createMock2FAResponse([]) as Response);
       });
 
-      const connectPromise = service
-        .connect('5678')
-        .catch((e: unknown) => e as Error);
-      await jest.advanceTimersByTimeAsync(2000);
+      const promise = service.connect('5678');
 
-      const result = await connectPromise;
-      expect((result as Error).message).toBe(
-        'No cookies received from 2FA response',
-      );
+      await Promise.all([
+        expect(promise).rejects.toThrow(
+          'No cookies received from 2FA response',
+        ),
+        jest.advanceTimersByTimeAsync(2000),
+      ]);
     });
 
     it('should handle response with no headers', async () => {
@@ -472,15 +461,14 @@ describe('TradeRepublicApiService', () => {
         } as unknown as Response);
       });
 
-      const connectPromise = service
-        .connect('5678')
-        .catch((e: unknown) => e as Error);
-      await jest.advanceTimersByTimeAsync(2000);
+      const promise = service.connect('5678');
 
-      const result = await connectPromise;
-      expect((result as Error).message).toBe(
-        'No cookies received from 2FA response',
-      );
+      await Promise.all([
+        expect(promise).rejects.toThrow(
+          'No cookies received from 2FA response',
+        ),
+        jest.advanceTimersByTimeAsync(2000),
+      ]);
     });
 
     it('should parse cookies using headers.get fallback', async () => {
@@ -1192,16 +1180,12 @@ describe('TradeRepublicApiService', () => {
     it('should reject on timeout', async () => {
       mockWebSocketManagerInstance.subscribe.mockReturnValue(46);
 
-      const promise = service
-        .subscribeAndWait('testTopic', {}, mockSchema)
-        .catch((e: unknown) => e as Error);
+      const promise = service.subscribeAndWait('testTopic', {}, mockSchema);
 
-      // Advance time past timeout (30 seconds default)
-      await jest.advanceTimersByTimeAsync(31_000);
-
-      const result = await promise;
-      expect(result).toBeInstanceOf(TradeRepublicError);
-      expect((result as Error).message).toBe('testTopic request timed out');
+      await Promise.all([
+        expect(promise).rejects.toThrow('testTopic request timed out'),
+        jest.advanceTimersByTimeAsync(31_000),
+      ]);
     });
 
     it('should reject on WebSocket error', async () => {
@@ -1906,20 +1890,13 @@ describe('TradeRepublicApiService', () => {
         } as Response);
       });
 
-      // Start the connect and advance timers concurrently
-      const connectPromise = service
-        .connect('5678')
-        .catch((e: unknown) => e as Error);
+      const promise = service.connect('5678');
 
-      // Advance through all retry attempts with backoff delays
-      // 1st attempt: immediate
-      // 2nd attempt: after 1s delay
-      // 3rd attempt: after 2s delay
-      // 4th attempt: after 4s delay (final failure)
-      await jest.advanceTimersByTimeAsync(10000);
+      await Promise.all([
+        expect(promise).rejects.toThrow('HTTP 500'),
+        jest.advanceTimersByTimeAsync(10000),
+      ]);
 
-      const result = await connectPromise;
-      expect(result).toBeInstanceOf(Error);
       expect(callCount).toBe(4); // Initial + 3 retries
     });
 
@@ -1963,14 +1940,13 @@ describe('TradeRepublicApiService', () => {
         } as Response);
       });
 
-      const connectPromise = service
-        .connect('5678')
-        .catch((e: unknown) => e as Error);
-      await jest.advanceTimersByTimeAsync(1000);
+      const promise = service.connect('5678');
 
-      const result = await connectPromise;
-      expect(result).toBeInstanceOf(Error);
-      expect((result as Error).message).toBe('Bad request');
+      await Promise.all([
+        expect(promise).rejects.toThrow('Bad request'),
+        jest.advanceTimersByTimeAsync(1000),
+      ]);
+
       expect(callCount).toBe(1); // No retries
     });
 
@@ -1985,14 +1961,13 @@ describe('TradeRepublicApiService', () => {
         } as Response);
       });
 
-      const connectPromise = service
-        .connect('5678')
-        .catch((e: unknown) => e as Error);
-      await jest.advanceTimersByTimeAsync(1000);
+      const promise = service.connect('5678');
 
-      const result = await connectPromise;
-      expect(result).toBeInstanceOf(Error);
-      expect((result as Error).message).toBe('Invalid credentials');
+      await Promise.all([
+        expect(promise).rejects.toThrow('Invalid credentials'),
+        jest.advanceTimersByTimeAsync(1000),
+      ]);
+
       expect(callCount).toBe(1); // No retries
     });
 
@@ -2203,14 +2178,13 @@ describe('TradeRepublicApiService', () => {
         return Promise.reject(error);
       });
 
-      const connectPromise = service
-        .connect('5678')
-        .catch((e: unknown) => e as Error);
+      const promise = service.connect('5678');
 
-      await jest.advanceTimersByTimeAsync(30000);
+      await Promise.all([
+        expect(promise).rejects.toThrow('The operation was aborted'),
+        jest.advanceTimersByTimeAsync(30000),
+      ]);
 
-      const result = await connectPromise;
-      expect(result).toBeInstanceOf(Error);
       expect(callCount).toBe(4); // Initial + 3 retries
     });
 
@@ -2229,15 +2203,12 @@ describe('TradeRepublicApiService', () => {
         } as Response);
       });
 
-      const connectPromise = service
-        .connect('5678')
-        .catch((e: unknown) => e as Error);
+      const promise = service.connect('5678');
 
-      // Wait for all retries to complete
-      await jest.advanceTimersByTimeAsync(20000);
-
-      const result = await connectPromise;
-      expect(result).toBeInstanceOf(Error);
+      await Promise.all([
+        expect(promise).rejects.toThrow('HTTP 500'),
+        jest.advanceTimersByTimeAsync(20000),
+      ]);
 
       // Verify exponential backoff delays (approximately)
       // First retry after ~1000ms, second after ~2000ms, third after ~4000ms
