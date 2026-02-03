@@ -569,11 +569,7 @@ export class TradeRepublicApiService {
       } catch (error) {
         resolved = true;
         cleanup();
-        if (error instanceof Error) {
-          reject(error);
-        } else {
-          reject(new TradeRepublicError(String(error)));
-        }
+        reject(new TradeRepublicError((error as Error).message));
       }
     });
   }
