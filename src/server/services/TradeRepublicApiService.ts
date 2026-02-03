@@ -45,6 +45,9 @@ import { TradeRepublicCredentials } from './TradeRepublicCredentials';
 /** Session expiration buffer (30 seconds before actual expiration) */
 const SESSION_EXPIRATION_BUFFER_MS = 30 * 1000;
 
+/** User-Agent header for Trade Republic API requests (matching pytr) */
+const TR_USER_AGENT = 'TradeRepublic/Android 30/App Version 1.1.5534';
+
 /** Default timeout for WebSocket subscriptions (30 seconds) */
 const SUBSCRIPTION_TIMEOUT_MS = 30_000;
 
@@ -203,23 +206,28 @@ export class TradeRepublicApiService {
 
   /**
    * Initiates login with stored credentials.
+   * Uses signed request per pytr implementation.
    */
   private async login(): Promise<void> {
-    this.ensureInitialized();
+    const keyPair = this.ensureInitialized();
 
     const { phoneNumber, pin } = this.credentials;
 
     logger.api.info(`Initiating login for ${phoneNumber.substring(0, 6)}...`);
 
-    const response = await this.throttledFetch(`${TR_API_URL}/auth/web/login`, {
+    const payload = JSON.stringify({ phoneNumber, pin });
+    const signedHeaders = this.createSignedHeaders(
+      payload,
+      keyPair.privateKeyPem,
+    );
+
+    const response = await this.throttledFetch(`${TR_API_URL}/auth/login`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        ...signedHeaders,
       },
-      body: JSON.stringify({
-        phoneNumber,
-        pin,
-      }),
+      body: payload,
     });
 
     if (!response.ok) {
@@ -242,6 +250,7 @@ export class TradeRepublicApiService {
 
   /**
    * Completes 2FA verification with the code received via SMS.
+   * Uses signed request per pytr implementation.
    * Precondition: Must be called when authStatus === AWAITING_2FA (ensured by callers)
    */
   private async verify2FA(code: string): Promise<void> {
@@ -253,16 +262,21 @@ export class TradeRepublicApiService {
       keyPair.publicKeyPem,
     );
 
+    const payload = JSON.stringify({ deviceKey: publicKeyBase64 });
+    const signedHeaders = this.createSignedHeaders(
+      payload,
+      keyPair.privateKeyPem,
+    );
+
     const response = await this.throttledFetch(
-      `${TR_API_URL}/auth/web/login/${this.processId}/${code}`,
+      `${TR_API_URL}/auth/login/${this.processId}/${code}`,
       {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...signedHeaders,
         },
-        body: JSON.stringify({
-          deviceKey: publicKeyBase64,
-        }),
+        body: payload,
       },
     );
 
@@ -740,6 +754,25 @@ export class TradeRepublicApiService {
     }
 
     return cookies;
+  }
+
+  /**
+   * Creates signed headers for API requests per pytr implementation.
+   * Returns headers with User-Agent, timestamp, and signature.
+   */
+  private createSignedHeaders(
+    payload: string,
+    privateKeyPem: string,
+  ): Record<string, string> {
+    const timestamp = Date.now().toString();
+    const signaturePayload = `${timestamp}.${payload}`;
+    const signature = this.cryptoManager.sign(signaturePayload, privateKeyPem);
+
+    return {
+      'User-Agent': TR_USER_AGENT,
+      'X-Zeta-Timestamp': timestamp,
+      'X-Zeta-Signature': signature,
+    };
   }
 
   /**

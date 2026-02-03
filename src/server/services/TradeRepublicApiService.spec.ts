@@ -232,6 +232,70 @@ describe('TradeRepublicApiService', () => {
       expect(service.getAuthStatus()).toBe(AuthStatus.AUTHENTICATED);
     });
 
+    it('should use correct endpoint and signed headers for login', async () => {
+      setupConnectMocks(mockFetch);
+
+      const connectPromise = service.connect('5678');
+      await jest.advanceTimersByTimeAsync(2000);
+      await connectPromise;
+
+      // Verify login was called with correct endpoint and headers
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/api/v1/auth/login'),
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({
+            'Content-Type': 'application/json',
+            'User-Agent': 'TradeRepublic/Android 30/App Version 1.1.5534',
+            'X-Zeta-Timestamp': expect.any(String),
+            'X-Zeta-Signature': expect.any(String),
+          }),
+        }),
+      );
+
+      // Verify NOT using the old web endpoint
+      expect(mockFetch).not.toHaveBeenCalledWith(
+        expect.stringContaining('/auth/web/login'),
+        expect.anything(),
+      );
+    });
+
+    it('should use correct endpoint and signed headers for 2FA verification', async () => {
+      setupConnectMocks(mockFetch);
+
+      const connectPromise = service.connect('5678');
+      await jest.advanceTimersByTimeAsync(2000);
+      await connectPromise;
+
+      // Verify 2FA was called with correct endpoint and headers (second call)
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('/auth/login/test-process-id/5678'),
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({
+            'Content-Type': 'application/json',
+            'User-Agent': 'TradeRepublic/Android 30/App Version 1.1.5534',
+            'X-Zeta-Timestamp': expect.any(String),
+            'X-Zeta-Signature': expect.any(String),
+          }),
+        }),
+      );
+    });
+
+    it('should sign login payload with timestamp', async () => {
+      setupConnectMocks(mockFetch);
+
+      const connectPromise = service.connect('5678');
+      await jest.advanceTimersByTimeAsync(2000);
+      await connectPromise;
+
+      // Verify sign was called with timestamp.payload format
+      expect(signMock).toHaveBeenCalledWith(
+        expect.stringMatching(/^\d+\.\{.*"phoneNumber".*"pin".*\}$/),
+        expect.any(String),
+      );
+    });
+
     it('should load existing key pair if stored', async () => {
       const existingKeyPair: KeyPair = {
         privateKeyPem:
